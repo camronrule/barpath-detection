@@ -1,4 +1,4 @@
-path: C:/Users/rulec/repos/barpath-detection/code/data/CV.v15i.yolov11
+path: /home/cmrule/barpath-detection/code/data/CV.v15i.yolov11
 train: train/images
 val: valid/images
 test: test/images
