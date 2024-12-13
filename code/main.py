@@ -3,8 +3,17 @@ import supervision as sv
 from ultralytics import YOLO
 from sys import maxsize
 
+'''
+TODO:
+- differentiate eccentric vs concentric (for max speed)
+- identify top and bottom of rep
+- graph velocity
+- different color line for each rep
+- 
+'''
+
 model_path = "../runs/detect/train/weights/best.pt"
-video_path = "data/videos/IMG_7472.MOV"
+video_path = "data/videos/IMG_6860.MOV"
 video_path_out = '{}_out.mp4'.format(video_path)
 
 model = YOLO("../runs/detect/train/weights/best.pt")
@@ -28,12 +37,19 @@ coordinates = defaultdict(lambda: deque(maxlen=2)) # keep only two positions to 
 plate_size_meters = 0.45 # plate diameter in meters
 
 ema_speeds = defaultdict(lambda: None) # use exponential floating avg to smooth speed values
-alpha = 0.1   # smoothing factor (0 < alpha <= 1)
+alpha = 0.5   # smoothing factor (0 < alpha <= 1)
 
 max_speed = max_smoothed_speed = 0
 
+tracker_speeds = {} # keep speeds per each tracker_id, to plot later
+
+# dont post every single speed, to make speed readable
+update_interval = 6 # update speed after this many frames
+frame_counter = defaultdict(lambda: 0) # holds the frame buffer count for each tracker_id
+display_speed = defaultdict(lambda: 0) # holds the current speed shown on screen for each tracker_id
+
 with sv.VideoSink(video_path_out, video_info=video_info) as sink:
-    for frame in frame_generator:
+    for frame_idx, frame in enumerate(frame_generator): # frame_idx = index of frame
         result = model(frame)[0]
         detections = sv.Detections.from_ultralytics(result)
         detections = tracker.update_with_detections(detections)
@@ -45,7 +61,6 @@ with sv.VideoSink(video_path_out, video_info=video_info) as sink:
         labels = []
 
         if len(detections) > 0:
-
 
             # get plate size for scaling
             coords = detections.xyxy[0]
@@ -71,17 +86,29 @@ with sv.VideoSink(video_path_out, video_info=video_info) as sink:
 
                 if speed_mps > max_speed: max_speed = speed_mps
 
+                # ema smoothing
                 previous_ema = ema_speeds[id]
-
                 if previous_ema is None:
                     ema_speeds[id] = speed_mps
                 else:
                     ema_speeds[id] = \
                         alpha * speed_mps + (1 - alpha) * previous_ema
-                    
                 smoothed_speed = ema_speeds[id]
                 if smoothed_speed > max_smoothed_speed: max_smoothed_speed = smoothed_speed
-                labels.append(f"{smoothed_speed:.3f} m/s")
+                
+                frame_counter[id] += 1
+                if frame_counter[id] >= update_interval:
+                    #display this speed
+                    display_speed[id] = smoothed_speed
+                    frame_counter[id] = 0
+
+                 # Add speed to the tracker-specific list
+                if id not in tracker_speeds:
+                    tracker_speeds[id] = []
+                tracker_speeds[id].append((frame_idx / video_info.fps, smoothed_speed))
+
+                labels.append(f"{display_speed[id]:.3f} m/s")
+
             else:
                 labels.append("") # edge case -> first label, not able to calculate speed
 
@@ -92,3 +119,18 @@ with sv.VideoSink(video_path_out, video_info=video_info) as sink:
         sink.write_frame(annotated_frame)
 
 print(f"Max speed found: {max_speed:.3f} m/s ({max_smoothed_speed:.3f} m/s smoothed)")
+
+import matplotlib.pyplot as plt
+
+# Plot speeds for each tracker
+plt.figure(figsize=(10, 6))
+for tracker_id, speeds in tracker_speeds.items():
+    times, values = zip(*speeds)  # Separate time and speed values
+    plt.plot(times, values, label=f"Tracker {tracker_id}")
+
+plt.title("Speed Over Time")
+plt.xlabel("Time (seconds)")
+plt.ylabel("Speed (m/s)")
+plt.legend()
+plt.grid()
+plt.show()
