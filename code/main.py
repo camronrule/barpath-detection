@@ -1,54 +1,94 @@
-'''
+from collections import defaultdict, deque
+import supervision as sv
 from ultralytics import YOLO
+from sys import maxsize
 
-# Build a new model
-model = YOLO("yolo11n.yaml")
+model_path = "../runs/detect/train/weights/best.pt"
+video_path = "data/videos/IMG_7472.MOV"
+video_path_out = '{}_out.mp4'.format(video_path)
 
-# Train the model
-train_results = model.train(
-    data="data/CV.v15i.yolov11/data.yaml",  # path to dataset YAML
-    epochs=1000,  # number of training epochs
-    device="cuda",  # device to run on, i.e. device=0 or device=0,1,2,3 or device=cpu
-)
-'''
-import cv2
-from ultralytics import YOLO  # Replace with your YOLO module if different
-
-# Load your model
 model = YOLO("../runs/detect/train/weights/best.pt")
 
-# Define the video input (change 'video.mp4' to your video file or use 0 for a webcam)
-video_path = "data/videos/IMG_7472.MOV"  # Replace with 0 for webcam
-video_path_out = '{}_out.mp4'.format(video_path)
-cap = cv2.VideoCapture(video_path)
+video_info = sv.VideoInfo.from_video_path(video_path=video_path)
+frame_generator = sv.get_video_frames_generator(source_path=video_path)
 
-ret, frame = cap.read()
-h,w, _ = frame.shape
-out = cv2.VideoWriter(video_path_out, cv2.VideoWriter_fourcc(*'MP4V'), int(cap.get(cv2.CAP_PROP_FPS)), (w,h))
-
-threshold = 0.5
-
-while ret:
-    results = model(frame)[0]
-
-    for result in results.boxes.data.tolist():
-        x1,y1,x2,y2, score, class_id = result
-
-        if score > threshold:
-            cv2.rectangle(frame, (int(x1), int(y1), int(x2), int(y2)), (0,255,0), 4)
-            cv2.putText(frame, results.names[int(class_id)].upper(), (int(x1), int(y1-10)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0,255,0), 3, cv2.LINE_AA)
-    
-    out.write(frame)
-
-    # Break on 'q' key
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-    ret, frame = cap.read()
+thickness = sv.calculate_optimal_line_thickness(
+    resolution_wh=video_info.resolution_wh)
+text_scale = sv.calculate_optimal_text_scale(resolution_wh=video_info.resolution_wh)
 
 
-# Release resources
-cap.release()
-out.release()
-cv2.destroyAllWindows()
+tracker = sv.ByteTrack(frame_rate=video_info.fps)
+smoother = sv.DetectionsSmoother()
+
+box_annotator = sv.BoxCornerAnnotator(thickness=thickness)
+label_annotator = sv.LabelAnnotator(text_scale=text_scale, text_thickness=thickness)
+trace_annotator = sv.TraceAnnotator(trace_length = maxsize) # length = maxsize, draw for the whole video
+
+coordinates = defaultdict(lambda: deque(maxlen=2)) # keep only two positions to get speed
+plate_size_meters = 0.45 # plate diameter in meters
+
+ema_speeds = defaultdict(lambda: None) # use exponential floating avg to smooth speed values
+alpha = 0.1   # smoothing factor (0 < alpha <= 1)
+
+max_speed = max_smoothed_speed = 0
+
+with sv.VideoSink(video_path_out, video_info=video_info) as sink:
+    for frame in frame_generator:
+        result = model(frame)[0]
+        detections = sv.Detections.from_ultralytics(result)
+        detections = tracker.update_with_detections(detections)
+        detections = smoother.update_with_detections(detections)
+
+        # filter detections
+        detections = detections[detections.confidence > 0.5]
+        detections = detections[detections.class_id == 1] # filter to only barbell
+        labels = []
+
+        if len(detections) > 0:
+
+
+            # get plate size for scaling
+            coords = detections.xyxy[0]
+            plate_size_pixels = (abs(coords[3]-coords[1]) + abs(coords[2] - coords[1]))/2
+
+            scaling_factor = plate_size_meters / plate_size_pixels
+
+            id = detections.tracker_id[0]
+
+            plate_center = detections.get_anchors_coordinates(sv.Position.CENTER)
+            coordinates[id].append(plate_center[0]) # get the y coord
+
+            if len(coordinates[id]) == 2:
+                #calculate euclidian distance since last frame
+                (x1, y1) = coordinates[id][0]
+                (x2, y2) = coordinates[id][1]
+
+                pixel_displacement = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+
+                distance_meters = pixel_displacement * scaling_factor
+                time_seconds = 1 / video_info.fps
+                speed_mps = distance_meters / time_seconds
+
+                if speed_mps > max_speed: max_speed = speed_mps
+
+                previous_ema = ema_speeds[id]
+
+                if previous_ema is None:
+                    ema_speeds[id] = speed_mps
+                else:
+                    ema_speeds[id] = \
+                        alpha * speed_mps + (1 - alpha) * previous_ema
+                    
+                smoothed_speed = ema_speeds[id]
+                if smoothed_speed > max_smoothed_speed: max_smoothed_speed = smoothed_speed
+                labels.append(f"{smoothed_speed:.3f} m/s")
+            else:
+                labels.append("") # edge case -> first label, not able to calculate speed
+
+        annotated_frame = box_annotator.annotate(frame.copy(), detections)
+        annotated_frame = trace_annotator.annotate(annotated_frame, detections)
+        annotated_frame = label_annotator.annotate(annotated_frame, detections, labels=labels)
+
+        sink.write_frame(annotated_frame)
+
+print(f"Max speed found: {max_speed:.3f} m/s ({max_smoothed_speed:.3f} m/s smoothed)")
