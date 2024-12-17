@@ -15,46 +15,71 @@ TODO:
 - 
 '''
 
-REP_COMPLETED = False
+REP_COMPLETED = False        # whether or not a rep has been completed
+PHASE_BUFFER_LENGTH = 5      # number of frames to wait until start detecting phase, so we can gather data
+
+LAST_FRAME_PHASE_CHANGED = 0     # keep track of the index of last frame where phase changed
+AVG_VELOCITY_OVER_FRAMES = 10    # take the mean of X,Y velocity over so many frames to take care of spikes
+FRAMES_BETWEEN_PHASE_CHANGE = 10 # minimum length of a phase before a new phase can be detected
+
+phase_data = {
+    "RACKED": {"x": [], "y": []},
+    "UNRACKING": {"x": [], "y": []},
+    "TOP": {"x": [], "y": []},
+    "ECCENTRIC": {"x": [], "y": []},
+    "BOTTOM": {"x": [], "y": []},
+    "CONCENTRIC": {"x": [], "y": []},
+    "RACKING": {"x": [], "y": []}
+}
+
 
 def detectPhase(phase):
-    global REP_COMPLETED
-
-    PHASE_BUFFER_LENGTH = 5 # number of frames to wait until start detecting phase
-    AVG_VELOCITY_OVER_FRAMES = 5
-    LAST_FRAME_PHASE_CHANGED = 0
-    FRAMES_BETWEEN_PHASE_CHANGE = 10
+    global REP_COMPLETED, LAST_FRAME_PHASE_CHANGED, \
+    PHASE_BUFFER_LENGTH, AVG_VELOCITY_OVER_FRAMES,  \
+    FRAMES_BETWEEN_PHASE_CHANGE
 
     # not enough data, return passed in phase
     if frame_index[-1] < PHASE_BUFFER_LENGTH:
         return phase
     
+    # store x,y norm values for each phase
+    # then we can verify that changes in velocity are changes in position as well
+    phase_data[phase.name]["x"].append(x_norm[-1])
+    phase_data[phase.name]["y"].append(y_norm[-1])
+    
     # only change phase every few frames
     if frame_index[-1] - LAST_FRAME_PHASE_CHANGED < FRAMES_BETWEEN_PHASE_CHANGE:
+        print(LAST_FRAME_PHASE_CHANGED)
         return phase 
-
+    
     phase_holder = phase
     
     v_x = sum(velocity_x[-AVG_VELOCITY_OVER_FRAMES:]) / len(velocity_x[-AVG_VELOCITY_OVER_FRAMES:])
     v_y = sum(velocity_y[-AVG_VELOCITY_OVER_FRAMES:]) / len(velocity_y[-AVG_VELOCITY_OVER_FRAMES:])
     print(f"{phase.name}: {v_x:.3f}, {v_y:.3f}")
 
+    pos_x_norm = sum(phase_data[phase.name]["x"]) / len(phase_data[phase.name]["x"])
+    pos_y_norm = sum(phase_data[phase.name]["y"]) / len(phase_data[phase.name]["y"])
+
     match (phase):
         case BarbellPhase.RACKED:
-            if abs(v_x) > 0.05 and not REP_COMPLETED: # moving => assume in process of unracking
+            if v_y < -0.05 and not REP_COMPLETED: # moving => assume in process of unracking
                 phase = BarbellPhase.UNRACKING
             # check to see if video starts unracked already, therefore we skip 
             #if abs(v_x < 0.01) and v_y > 0.0:
                 #phase = BarbellPhase.CONCENTRIC
 
         case BarbellPhase.UNRACKING:
-            if abs(v_x) < 0.001: # no longer moving, this is the start of the rep
+            # no movement in x direction, and x position is different from the rack position
+            print(abs(x_norm[-1] - phase_data[BarbellPhase.RACKED.name]["x"][-1]))
+            if (abs(v_x) < 0.001) and (abs(x_norm[-1] - phase_data[BarbellPhase.RACKED.name]["x"][-1]) > 0.05): 
                 phase = BarbellPhase.TOP
 
         case BarbellPhase.TOP: # if coming from a previous rep -> redraw line
-            if v_y > 0.05: # moving down => start of rep
+            if (v_y > 0.05) and (abs(y_norm[-1] - pos_y_norm) > 0.1): 
                 phase = BarbellPhase.ECCENTRIC
-            elif abs(v_x) > 0.05: # and not y_velocity > 0.0
+            # moving in x direction, and rep has been done
+            elif (abs(v_x) > 0.05) and REP_COMPLETED: # TODO check that x is moving closer to rack
                 phase = BarbellPhase.RACKING
         
         case BarbellPhase.ECCENTRIC:
@@ -78,8 +103,6 @@ def detectPhase(phase):
         LAST_FRAME_PHASE_CHANGED = frame_index[-1]
     return phase
 
-    
-
 # default -> RACKED. 
 # start drawing rep at TOP phase
 class BarbellPhase(Enum):
@@ -93,7 +116,7 @@ class BarbellPhase(Enum):
 
 
 model_path = "../runs/detect/train/weights/best.pt"
-video_path = "data/videos/IMG_6723.MOV"
+video_path = "data/videos/IMG_6860.MOV"
 video_path_out = '{}_out.mp4'.format(video_path)
 output_csv_path = '{}_out.csv'.format(video_path)
 
@@ -218,7 +241,6 @@ with sv.VideoSink(video_path_out, video_info=video_info) as sink:
                 else:
                     acceleration.append(None) # to ensure that all data is same length
 
-                phase = detectPhase(phase)
 
                 # add to output data
                 frame_index.append(frame_idx)
@@ -239,6 +261,8 @@ with sv.VideoSink(video_path_out, video_info=video_info) as sink:
                     #display this speed
                     display_speed[id] = smoothed_speed
                     frame_counter[id] = 0 # reset throttle count
+
+                phase = detectPhase(phase) # calculate after x,y_norm have been set
 
                 if (frame_idx > 5):
                         
@@ -264,15 +288,7 @@ with sv.VideoSink(video_path_out, video_info=video_info) as sink:
                 labels.append("") # edge case -> first label, not able to calculate speed
 
                 # append empty data
-                frame_index.append(frame_idx)
-                x_norm.append(None) # x / width = x_norm
-                y_norm.append(None)
-                delta_x_out.append(None)
-                delta_y_out.append(None)
-                velocity_x.append(None)
-                velocity_y.append(None)
-                speed.append(None)
-                acceleration.append(None)
+
 
         annotated_frame = box_annotator.annotate(frame.copy(), detections)
         annotated_frame = trace_annotator.annotate(annotated_frame, detections)
