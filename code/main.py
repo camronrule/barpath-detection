@@ -5,21 +5,19 @@ import supervision as sv
 from enum import Enum
 from ultralytics import YOLO
 from sys import maxsize
+from statistics import fmean
 
 
 '''
 TODO:
-- differentiate eccentric vs concentric (for max speed)
-- identify top and bottom of rep
 - different color line for each rep
-- 
 '''
 
 REP_COMPLETED = False        # whether or not a rep has been completed
 PHASE_BUFFER_LENGTH = 5      # number of frames to wait until start detecting phase, so we can gather data
 
 LAST_FRAME_PHASE_CHANGED = 0     # keep track of the index of last frame where phase changed
-AVG_VELOCITY_OVER_FRAMES = 10    # take the mean of X,Y velocity over so many frames to take care of spikes
+AVG_VELOCITY_OVER_FRAMES = 7     # take the mean of X,Y velocity over so many frames to take care of spikes
 FRAMES_BETWEEN_PHASE_CHANGE = 10 # minimum length of a phase before a new phase can be detected
 
 phase_data = {
@@ -32,7 +30,14 @@ phase_data = {
     "RACKING": {"x": [], "y": []}
 }
 
+# get average of the last [length] items of [data]
+# if [length] is not specified, length = the size of [data]
+def getMean(data, length=None):
+    if length == None:
+        length = len(data)
+    return fmean(data[-length:])
 
+    
 def detectPhase(phase):
     global REP_COMPLETED, LAST_FRAME_PHASE_CHANGED, \
     PHASE_BUFFER_LENGTH, AVG_VELOCITY_OVER_FRAMES,  \
@@ -54,29 +59,33 @@ def detectPhase(phase):
     
     phase_holder = phase
     
-    v_x = sum(velocity_x[-AVG_VELOCITY_OVER_FRAMES:]) / len(velocity_x[-AVG_VELOCITY_OVER_FRAMES:])
-    v_y = sum(velocity_y[-AVG_VELOCITY_OVER_FRAMES:]) / len(velocity_y[-AVG_VELOCITY_OVER_FRAMES:])
+    v_x = getMean(velocity_x, AVG_VELOCITY_OVER_FRAMES)
+    v_y = getMean(velocity_y, AVG_VELOCITY_OVER_FRAMES)
     print(f"{phase.name}: {v_x:.3f}, {v_y:.3f}")
 
-    pos_x_norm = sum(phase_data[phase.name]["x"]) / len(phase_data[phase.name]["x"])
-    pos_y_norm = sum(phase_data[phase.name]["y"]) / len(phase_data[phase.name]["y"])
+    # average of the normalized values for this phase
+    pos_x_norm = fmean(phase_data[phase.name]["x"]) 
+    pos_y_norm = fmean(phase_data[phase.name]["y"])
 
     match (phase):
         case BarbellPhase.RACKED:
-            if v_y < -0.05 and not REP_COMPLETED: # moving => assume in process of unracking
+            # we have x or y movement and rep has not been done yet (unracking only happens before the reps start) -> unracking
+            if ((v_y < -0.05) or (abs(v_x) > 0.05)) and not REP_COMPLETED: # moving => assume in process of unracking
                 phase = BarbellPhase.UNRACKING
             # check to see if video starts unracked already, therefore we skip 
             #if abs(v_x < 0.01) and v_y > 0.0:
                 #phase = BarbellPhase.CONCENTRIC
 
         case BarbellPhase.UNRACKING:
-            # no movement in x direction, and x position is different from the rack position
-            print(abs(x_norm[-1] - phase_data[BarbellPhase.RACKED.name]["x"][-1]))
-            if (abs(v_x) < 0.001) and (abs(x_norm[-1] - phase_data[BarbellPhase.RACKED.name]["x"][-1]) > 0.05): 
+            # no movement in x direction, and x position is different from the x of the start of the rack position
+            print(abs(x_norm[-1] - phase_data[BarbellPhase.RACKED.name]["x"][1]))
+            if (abs(v_x) < 0.005) and (abs(x_norm[-1] - phase_data[BarbellPhase.RACKED.name]["x"][-1]) > 0.005): # was 0.05
                 phase = BarbellPhase.TOP
+            #elif we missed the 'TOP' -> if large y movement, go strait to concentric
 
         case BarbellPhase.TOP: # if coming from a previous rep -> redraw line
-            if (v_y > 0.05) and (abs(y_norm[-1] - pos_y_norm) > 0.1): 
+            # if moving down in the y direction, and y_norm has changed since the beginning of TOP phase
+            if (v_y > 0.04) and (abs(y_norm[-1] - phase_data[BarbellPhase.TOP.name]["y"][1]) > 0.01): # was 0.1
                 phase = BarbellPhase.ECCENTRIC
             # moving in x direction, and rep has been done
             elif (abs(v_x) > 0.05) and REP_COMPLETED: # TODO check that x is moving closer to rack
@@ -116,7 +125,7 @@ class BarbellPhase(Enum):
 
 
 model_path = "../runs/detect/train/weights/best.pt"
-video_path = "data/videos/IMG_6860.MOV"
+video_path = "data/videos/IMG_6527.MOV"
 video_path_out = '{}_out.mp4'.format(video_path)
 output_csv_path = '{}_out.csv'.format(video_path)
 
