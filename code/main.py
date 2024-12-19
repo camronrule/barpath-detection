@@ -1,11 +1,11 @@
-from collections import defaultdict, deque
-import cv2
-import pandas as pd
-import supervision as sv
-from enum import Enum
-from ultralytics import YOLO
-from sys import maxsize
-from statistics import fmean
+from collections import defaultdict, deque   # hold lists of data for each tracker_id
+import cv2                                   # write data to video
+import pandas as pd                          # create output csv
+import supervision as sv                     # annotate video
+from enum import Enum                        # BarbellPhase type
+from ultralytics import YOLO                 # detection, classification model
+from sys import maxsize                      # length of trace annotation
+from statistics import fmean                 # to calculate averages in getMean()
 
 
 '''
@@ -13,13 +13,15 @@ TODO:
 - different color line for each rep
 '''
 
-REP_COMPLETED = False        # whether or not a rep has been completed
-PHASE_BUFFER_LENGTH = 5      # number of frames to wait until start detecting phase, so we can gather data
-
+# ***** VARIABLES USED IN PHASE DETECTION ***** 
+REP_COMPLETED = False            # whether or not a rep has been completed
+PHASE_BUFFER_LENGTH = 5          # number of frames to wait until start detecting phase, so we can gather data
 LAST_FRAME_PHASE_CHANGED = 0     # keep track of the index of last frame where phase changed
 AVG_VELOCITY_OVER_FRAMES = 7     # take the mean of X,Y velocity over so many frames to take care of spikes
 FRAMES_BETWEEN_PHASE_CHANGE = 10 # minimum length of a phase before a new phase can be detected
 
+# x,y norm values for each frame that we are in each position
+# edge case -> values are only updated in frames that a barbell is detected
 phase_data = {
     "RACKED": {"x": [], "y": []},
     "UNRACKING": {"x": [], "y": []},
@@ -108,8 +110,12 @@ def detectPhase(phase):
             if abs(v_x) < 0.03 and abs(v_y) < 0.03:
                 phase = BarbellPhase.RACKED
 
+    # if we detected a new phase, then update
+    # the variable holding the last frame changed
+    # to the most recent frame
     if phase_holder is not phase:
         LAST_FRAME_PHASE_CHANGED = frame_index[-1]
+        
     return phase
 
 # default -> RACKED. 
