@@ -4,3 +4,7 @@
 *.mov
 *.MOV
 *.csv
+
+__pycache__
+
+data/
