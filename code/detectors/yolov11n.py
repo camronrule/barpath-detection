@@ -7,6 +7,8 @@ from ultralytics import YOLO                 # detection, classification model
 from sys import maxsize                      # length of trace annotation
 from statistics import fmean                 # to calculate averages in getMean()
 
+import BarbellPhase
+
 
 '''
 TODO:
