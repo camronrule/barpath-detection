@@ -1,8 +1,9 @@
-# default -> RACKED. 
-# start drawing rep at TOP phase
-from enum import Enum                        # BarbellPhase type
+from enum import Enum
+
 
 class BarbellPhase(Enum):
+    """Represents the phase of the barbell lift
+    """
     RACKED = 1
     UNRACKING = 2
     TOP = 3
