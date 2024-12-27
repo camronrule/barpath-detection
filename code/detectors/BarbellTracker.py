@@ -1,5 +1,7 @@
 from typing import Tuple
-from BarbellPhase import BarbellPhase        # BarbellPhase type
+
+import pandas as pd
+from detectors.BarbellPhase import BarbellPhase        # BarbellPhase type
 
 # hold lists of data for each tracker_id
 from collections import defaultdict, deque
@@ -361,3 +363,17 @@ class BarbellTracker:
             self.LAST_FRAME_PHASE_CHANGED = self.frame_indices[-1]
 
         return phase
+
+    def get_json_from_data(self) -> str:
+        df = pd.DataFrame({
+            "Frame": self.frame_indices,
+            "X_normalized": self.x_norms,
+            "Y_normalized": self.y_norms,
+            "Delta_X": self.delta_x_outs,
+            "Delta Y": self.delta_y_outs,
+            "Speed": self.speeds,
+            "Velocity_X": self.velocities_x,
+            "Velocity_Y": self.velocities_y,
+            "Acceleration": self.accelerations
+        })
+        return df.to_json()

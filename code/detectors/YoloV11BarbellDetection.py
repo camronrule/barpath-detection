@@ -1,3 +1,5 @@
+import tempfile
+from typing import Tuple
 import cv2                                   # write data to video
 import pandas as pd                          # create output csv
 import supervision as sv                     # annotate video
@@ -7,7 +9,7 @@ from sys import maxsize                      # length of trace annotation
 import os                                    # set PATH, CONF_THRESH environment vars
 import numpy as np                           # img to/from byte array
 
-from BarbellTracker import BarbellTracker    # BarbellTracker class
+from detectors.BarbellTracker import BarbellTracker   # BarbellTracker class
 
 
 class YoloV11BarbellDetection:
@@ -17,22 +19,20 @@ class YoloV11BarbellDetection:
     visible for the entire duration of the video."""
 
     PATH = os.environ.get("YOLO_WEIGHTS_PATH",
-                          "best.pt")       # Path to a model
+                          "detectors/best.pt")       # Path to a model
     # Confidence threshold
     CONF_THRESH = float(os.environ.get("YOLO_CONF_THRESHOLD", "0.60"))
 
-    def __init__(self, in_video_path: str, out_video_path: str) -> None:
+    def __init__(self, video_path: str) -> None:
         """Initialize a YOLO v11 image detection model with a video
 
         Args:
-            in_video_path (str): Path to the input video
-            out_video_path (str): Path to save the output video
+            video_path (str): Path to the input video
         """
 
         self.model = self.__load_model()
 
-        self.in_video_path = in_video_path
-        self.out_video_path = out_video_path
+        self.video_path = video_path
 
         self.__setup_supervision()
         self.__barbell_tracker = self.__setup_barbell_tracker()
@@ -52,9 +52,9 @@ class YoloV11BarbellDetection:
 
         # utilities for processing video frames
         self.__video_info = sv.VideoInfo.from_video_path(
-            video_path=self.in_video_path)
+            video_path=self.video_path)
         self.__frame_generator = sv.get_video_frames_generator(
-            source_path=self.in_video_path)
+            source_path=self.video_path)
 
         # variables for writing to video, dependedent on video specifications
         self.__thickness = sv.calculate_optimal_line_thickness(
@@ -145,15 +145,17 @@ class YoloV11BarbellDetection:
                                           lineType=cv2.LINE_AA)  # use LINE_8 for quicker writing
         return annotated_frame
 
-    def process_video(self) -> None:
+    def process_video(self) -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker
+
+        Returns: 
+            Tuple[str, str]: The output video path and the output JSON str
         """
 
-        # cap = cv2.VideoCapture(self.in_video_path) # cv2 needed to write text onto frame
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
+        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
 
-        with sv.VideoSink(self.out_video_path, self.__video_info) as sink:
-            # ret, frame = cap.read()
+        with sv.VideoSink(temp_output.name, self.__video_info) as sink:
 
             # get detections by calling the model on each frame
             # get velocity data by passing detections to the barbell tracker
@@ -171,12 +173,11 @@ class YoloV11BarbellDetection:
 
                 sink.write_frame(annotated_frame)
 
-        # cap.release()
+        return temp_output.name, barbell_tracker.get_json_from_data()
 
 
-    # Example usage
-if __name__ == "__main__":
-
+'''
+def main() -> str:
     input_video_path = "../../data/videos/IMG_6527.MOV"
     output_video_path = "../../data/videos/IMG_6527_OUT.MOV"
 
@@ -184,4 +185,10 @@ if __name__ == "__main__":
     detector = YoloV11BarbellDetection(input_video_path, output_video_path)
 
     # Process a video and save the annotated output
-    detector.process_video()
+    data = detector.process_video()
+    return data
+
+
+if __name__ == "__main__":
+    main()
+'''
