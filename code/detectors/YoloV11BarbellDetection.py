@@ -1,4 +1,6 @@
+import asyncio
 import tempfile
+import time
 from typing import Tuple
 import cv2                                   # write data to video
 import pandas as pd                          # create output csv
@@ -8,8 +10,11 @@ from sys import maxsize                      # length of trace annotation
 
 import os                                    # set PATH, CONF_THRESH environment vars
 import numpy as np                           # img to/from byte array
+import logging
 
 from detectors.BarbellTracker import BarbellTracker   # BarbellTracker class
+
+logging.basicConfig(level=logging.INFO)
 
 
 class YoloV11BarbellDetection:
@@ -23,7 +28,7 @@ class YoloV11BarbellDetection:
     # Confidence threshold
     CONF_THRESH = float(os.environ.get("YOLO_CONF_THRESHOLD", "0.60"))
 
-    def __init__(self, video_path: str) -> None:
+    def __init__(self, video_path_in: str, video_path_out: str) -> None:
         """Initialize a YOLO v11 image detection model with a video
 
         Args:
@@ -32,7 +37,8 @@ class YoloV11BarbellDetection:
 
         self.model = self.__load_model()
 
-        self.video_path = video_path
+        self.video_path_in = video_path_in
+        self.video_path_out = video_path_out
 
         self.__setup_supervision()
         self.__barbell_tracker = self.__setup_barbell_tracker()
@@ -43,18 +49,21 @@ class YoloV11BarbellDetection:
         Returns:
             YOLO: The loaded YOLO v11 detection model
         """
-
+        logging.info(f"Loading model from {YoloV11BarbellDetection.PATH}")
         model = YOLO(YoloV11BarbellDetection.PATH)
+        logging.info("Model loaded successfully")
         return model
 
     def __setup_supervision(self) -> None:
         """Setup the Supervision library for video annotation"""
 
+        logging.info(f"Setting up Supervision library for video annotation")
+
         # utilities for processing video frames
         self.__video_info = sv.VideoInfo.from_video_path(
-            video_path=self.video_path)
+            video_path=self.video_path_in)
         self.__frame_generator = sv.get_video_frames_generator(
-            source_path=self.video_path)
+            source_path=self.video_path_in)
 
         # variables for writing to video, dependedent on video specifications
         self.__thickness = sv.calculate_optimal_line_thickness(
@@ -76,6 +85,8 @@ class YoloV11BarbellDetection:
 
     def __setup_barbell_tracker(self) -> BarbellTracker:
         """Setup the BarbellTracker class for tracking and phase detection"""
+        logging.info(
+            "Setting up BarbellTracker for tracking and phase detection")
         return BarbellTracker()
 
     def __update_sv(self, results: list) -> sv.Detections:
@@ -145,7 +156,14 @@ class YoloV11BarbellDetection:
                                           lineType=cv2.LINE_AA)  # use LINE_8 for quicker writing
         return annotated_frame
 
-    def process_video(self) -> Tuple[str, str]:
+    async def process_video(self):
+        """
+        """
+        logging.info(f"Video processing starting at {time.time()}")
+        await asyncio.to_thread(self._process_video_in_thread)
+        logging.info(f"Video processing finished at {time.time()}")
+
+    def _process_video_in_thread(self):  # -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker
 
         Returns: 
@@ -153,9 +171,9 @@ class YoloV11BarbellDetection:
         """
 
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
-        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        # temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
 
-        with sv.VideoSink(temp_output.name, self.__video_info) as sink:
+        with sv.VideoSink(self.video_path_out, self.__video_info) as sink:
 
             # get detections by calling the model on each frame
             # get velocity data by passing detections to the barbell tracker
@@ -173,7 +191,8 @@ class YoloV11BarbellDetection:
 
                 sink.write_frame(annotated_frame)
 
-        return temp_output.name, barbell_tracker.get_json_from_data()
+        # return self.video_path_out, barbell_tracker.get_json_from_data()
+        return
 
 
 '''

@@ -1,7 +1,9 @@
 # For API operations and standards
+import asyncio
 import os
 import tempfile
-from fastapi import APIRouter, UploadFile, Response, status, HTTPException
+from typing import Tuple
+from fastapi import APIRouter, BackgroundTasks, UploadFile, Response, status, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 # Our detector objects
 from detectors.YoloV11BarbellDetection import YoloV11BarbellDetection
@@ -25,7 +27,7 @@ videos = []
              responses={
                  201: {"description": "Successfully Analyzed Video."}
              })
-async def yolo_video_upload(file: UploadFile):
+async def yolo_video_upload(file: UploadFile, background_tasks: BackgroundTasks) -> dict:
     """Takes a multi-part upload video, analyzes each frame, and returns an annotated video.
 
     Arguments:
@@ -35,18 +37,26 @@ async def yolo_video_upload(file: UploadFile):
         dict: The video ID and the download URL
     """
     temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    try:
-        contents = await file.read()
-        temp_input.write(contents)
-        temp_input.close()
+    temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
 
-        dt = YoloV11BarbellDetection(temp_input.name)
-        out_path, data = dt.process_video()
-        videos.append(out_path)
-        video_id = len(videos) - 1
-        return {"id": video_id, "download_url": f"/yolo/video/{video_id}"}
-    finally:
-        os.unlink(temp_input.name)
+    # contents = await file.read()
+    # temp_input.write(contents)
+    # temp_input.close()
+
+    # open file synchronously
+    with open(temp_input.name, "wb") as f:
+        f.write(await file.read())
+
+    detector = YoloV11BarbellDetection(temp_input.name, temp_output.name)
+
+    # background_tasks.add_task(detector.process_video)
+    asyncio.create_task(detector.process_video())
+
+    videos.append(temp_output.name)
+    video_id = len(videos) - 1
+    # return {"id": video_id, "download_url": f"/yolo/video/{video_id}"}
+    return {"message": "Video uploaded successfully. Processing has started",
+            "video_id": video_id}
 
 
 @router.get("/video/{video_id}",
