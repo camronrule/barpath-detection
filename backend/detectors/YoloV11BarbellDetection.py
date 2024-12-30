@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 import tempfile
 import time
 from typing import Tuple
@@ -14,7 +15,12 @@ import logging
 
 from detectors.BarbellTracker import BarbellTracker   # BarbellTracker class
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("BarbellDetection")
 
 
 class YoloV11BarbellDetection:
@@ -49,15 +55,15 @@ class YoloV11BarbellDetection:
         Returns:
             YOLO: The loaded YOLO v11 detection model
         """
-        logging.info(f"Loading model from {YoloV11BarbellDetection.PATH}")
+        logger.info(f"Loading model from {YoloV11BarbellDetection.PATH}")
         model = YOLO(YoloV11BarbellDetection.PATH)
-        logging.info("Model loaded successfully")
+        logger.info("Model loaded successfully")
         return model
 
     def __setup_supervision(self) -> None:
         """Setup the Supervision library for video annotation"""
 
-        logging.info(f"Setting up Supervision library for video annotation")
+        logger.info(f"Setting up Supervision library for video annotation")
 
         # utilities for processing video frames
         self.__video_info = sv.VideoInfo.from_video_path(
@@ -85,7 +91,7 @@ class YoloV11BarbellDetection:
 
     def __setup_barbell_tracker(self) -> BarbellTracker:
         """Setup the BarbellTracker class for tracking and phase detection"""
-        logging.info(
+        logger.info(
             "Setting up BarbellTracker for tracking and phase detection")
         return BarbellTracker()
 
@@ -120,7 +126,9 @@ class YoloV11BarbellDetection:
         """
 
         result = self.model(
-            [frame], conf=YoloV11BarbellDetection.CONF_THRESH)[0]
+            [frame],
+            conf=YoloV11BarbellDetection.CONF_THRESH,
+            verbose=False)[0]
         # update sv_tracker, smoother with the results
         detections = self.__update_sv(result)
         return detections
@@ -159,9 +167,12 @@ class YoloV11BarbellDetection:
     async def process_video(self):
         """
         """
-        logging.info(f"Video processing starting at {time.time()}")
+        start = time.time()
+        logger.info(f"Video processing starting")
         await asyncio.to_thread(self._process_video_in_thread)
-        logging.info(f"Video processing finished at {time.time()}")
+        end = time.time()
+        logger.info(
+            f"Video processing finished took {str(timedelta(seconds=end-start))} to finish")
 
     def _process_video_in_thread(self):  # -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker
@@ -195,8 +206,7 @@ class YoloV11BarbellDetection:
         return
 
 
-'''
-def main() -> str:
+'''def main() -> str:
     input_video_path = "../../data/videos/IMG_6527.MOV"
     output_video_path = "../../data/videos/IMG_6527_OUT.MOV"
 

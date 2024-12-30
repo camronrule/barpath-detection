@@ -165,10 +165,8 @@ class BarbellTracker:
                 # acceleration = change in velocity / change in time
                 # unit: meters per second squared
                 a_x = a_y = 0
-                # need to be on the third frame to calculate
-                # acceleration (since velocity isn't available
-                # until the second frame)
-                if frame_idx > 1:
+                # only calculate acceleration if we have previous velocity data
+                if len(self.velocities_x) > 0 and len(self.velocities_y) > 0:
                     a_x = (v_x - self.velocities_x[-1]) / delta_t
                     a_y = (v_y - self.velocities_y[-1]) / delta_t
                     a_total = (a_x ** 2 + a_y ** 2) ** 0.5

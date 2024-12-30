@@ -7,9 +7,15 @@ from starlette.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
+# Allow requests from the front end
+origins = [
+    "http://localhost",
+    "http://localhost:3000"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust origins in production
+    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

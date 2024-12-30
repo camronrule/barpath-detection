@@ -1,0 +1,9 @@
+fastapi==0.115.6
+numpy==2.2.1
+opencv_python==4.10.0.84
+pandas==2.2.3
+pydantic==2.10.4
+starlette==0.45.0
+supervision==0.25.1
+ultralytics==8.3.49
+uvicorn==0.34.0

@@ -1,14 +1,19 @@
 # For API operations and standards
 import asyncio
+import logging
 import os
 import tempfile
-from typing import Tuple
-from fastapi import APIRouter, BackgroundTasks, UploadFile, Response, status, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, UploadFile, status, HTTPException
+from fastapi.responses import FileResponse
 # Our detector objects
 from detectors.YoloV11BarbellDetection import YoloV11BarbellDetection
-# For encoding images
-import cv2
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("FastAPIApp")
 
 
 # A new router object that we can add endpoints to.
@@ -27,7 +32,7 @@ videos = []
              responses={
                  201: {"description": "Successfully Analyzed Video."}
              })
-async def yolo_video_upload(file: UploadFile, background_tasks: BackgroundTasks) -> dict:
+async def yolo_video_upload(file: UploadFile) -> dict:
     """Takes a multi-part upload video, analyzes each frame, and returns an annotated video.
 
     Arguments:
@@ -36,16 +41,17 @@ async def yolo_video_upload(file: UploadFile, background_tasks: BackgroundTasks)
     Returns:
         dict: The video ID and the download URL
     """
+
     temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
 
-    # contents = await file.read()
-    # temp_input.write(contents)
-    # temp_input.close()
+    logger.info(f"Uploading {temp_input.name}")
 
     # open file synchronously
     with open(temp_input.name, "wb") as f:
         f.write(await file.read())
+
+    logger.info(f"Uploaded {temp_input.name}")
 
     detector = YoloV11BarbellDetection(temp_input.name, temp_output.name)
 
