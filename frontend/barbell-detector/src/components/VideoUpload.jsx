@@ -9,6 +9,7 @@ const VideoUpload = () => {
   const [resultsLink, setResultsLink] = useState(null);
   const [isUploading, setIsUploading] = useState(null);
   const [isProcessing, setIsProcessing] = useState(null);
+  const [videoProgress, setVideoProgress] = useState(null);
   const [error, setError] = useState(null);
 
   const handleFileChange = (e) => {
@@ -63,23 +64,25 @@ const VideoUpload = () => {
 
           const data = await response.json();
 
-          if (data.status === "Finished") {
+          setVideoProgress(data.progress);
+
+          if (data.state === "Finished") {
             setDownloadLink(
               `http://localhost/yolo/video/${videoId}`
             );
             setResultsLink(
               `http://localhost/yolo/video/${videoId}/data`
-            )
+            );
             setIsProcessing(false); // Stop polling
             //TODO Get results
           }
-          else if (data.status.includes("Error")){
-            throw new Error(data.status)
+          else if (data.state.includes("Error")){
+            throw new Error(data.state)
           }
         } catch (error) {
           console.error("Error checking status:", error);
         }
-      }, 1000); // Poll every second
+      }, 500); // Poll every second
 
       return () => clearInterval(interval); // Cleanup on component unmount
     }
@@ -97,16 +100,21 @@ const VideoUpload = () => {
       {message && !isProcessing && !downloadLink && <p>{message}</p>}
       {videoId != null && videoId != undefined && <p> Video ID: {videoId}</p>}
 
-      {downloadLink && (
+      {(isUploading || isProcessing) && (
+        <progress value={videoProgress} />
+      )}
+
+      {(!isProcessing && !isUploading) && downloadLink && (
             <a href={downloadLink} download>
               <button>Download Processed Video ({videoId}) </button>
             </a>
           )}
-      {resultsLink && (
+      {(!isProcessing && !isUploading) && resultsLink && (
           <a href={resultsLink} download>
             <button>Download Results of Video ({videoId}) </button>
           </a>
         )}
+
       {error && <p style={{ color: "red" }}>{JSON.stringify(error)}</p>}
     </div>
   );

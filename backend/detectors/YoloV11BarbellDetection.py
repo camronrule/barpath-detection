@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import timedelta
 import time
 import cv2                                   # write data to video
@@ -21,6 +22,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("BarbellDetection")
 
+# Different possible responses for video state
+STATE_PROCESSING = "Processing"
+STATE_ERROR = "Error"
+STATE_FINISHED = "Finished"
+
 
 class YoloV11BarbellDetection:
     """A class to detect barbells in a video using YOLO v11 and track them using the BarbellTracker class
@@ -38,6 +44,9 @@ class YoloV11BarbellDetection:
         """
         self.model = self.__load_model()
         self.data = {}
+        # video_id : {"state": str, "progress": float}
+        self.status = defaultdict(
+            lambda: {"state": STATE_PROCESSING, "progress": "0.0"})
 
     def init_video(self, video_path_in: str, video_path_out: str, video_id: int) -> None:
         """Take in a video for the YOLO v11 model
@@ -58,6 +67,8 @@ class YoloV11BarbellDetection:
 
         # show that we are not done processing this video yet
         self.data[video_id] = "N/A"
+        self.update_progress(video_id, 0)
+        self.update_state(video_id, STATE_PROCESSING)
 
     def __load_model(self) -> YOLO:
         """Load YOLO v11 model from path
@@ -124,7 +135,21 @@ class YoloV11BarbellDetection:
 
         return detections
 
-    # async
+    def update_progress(self, video_id: int, progress: float) -> None:
+        self.status[video_id]["progress"] = progress
+
+    def update_state(self, video_id: int, state: str) -> None:
+        self.status[video_id]["state"] = state
+
+    def get_progress(self, video_id: int) -> float:
+        return self.status[video_id]["progress"]
+
+    def get_state(self, video_id: int) -> str:
+        return self.status[video_id]["state"]
+
+    def get_status(self, video_id: int) -> dict:
+        return self.status[video_id]
+
     def __call__(self, frame: np.ndarray) -> sv.Detections:
         """Analyze a single frame and return results found
 
@@ -193,25 +218,36 @@ class YoloV11BarbellDetection:
 
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
 
-        with sv.VideoSink(self.video_path_out, self.__video_info) as sink:
+        try:
+            with sv.VideoSink(self.video_path_out, self.__video_info) as sink:
 
-            # get detections by calling the model on each frame
-            # get velocity data by passing detections to the barbell tracker
-            # format velocty data into formatted_strings, then append to
-            # frame and write to output video
-            for frame_idx, frame in enumerate(self.__frame_generator):
-                detections = self(frame)
-                label, values = barbell_tracker.update(
-                    frame_idx, detections, self.__video_info)
+                # get detections by calling the model on each frame
+                # get velocity data by passing detections to the barbell tracker
+                # format velocty data into formatted_strings, then append to
+                # frame and write to output video
+                for frame_idx, frame in enumerate(self.__frame_generator):
+                    detections = self(frame)
+                    label, values = barbell_tracker.update(
+                        frame_idx, detections, self.__video_info)
 
-                formatted_strings = [
-                    f"{key}: {value}" for key, value in values.items()]
-                annotated_frame = self.__write_to_frame(
-                    detections, frame, label, formatted_strings)
+                    formatted_strings = [
+                        f"{key}: {value}" for key, value in values.items()]
+                    annotated_frame = self.__write_to_frame(
+                        detections, frame, label, formatted_strings)
 
-                sink.write_frame(annotated_frame)
+                    sink.write_frame(annotated_frame)
 
-        # return self.video_path_out, barbell_tracker.get_json_from_data()
+                    # update progress
+                    self.update_progress(
+                        self.video_id, (frame_idx / self.__video_info.total_frames))
+
+        except Exception:
+            self.update_state(self.video_id, STATE_ERROR)
+            self.update_progress(self.video_id, -1)
+
+        self.update_state(self.video_id, STATE_FINISHED)
+        # should be 1 anyway, but just to be sure
+        self.update_progress(self.video_id, 1.0)
         self.data[self.video_id] = barbell_tracker.get_json_from_data()
         return
 

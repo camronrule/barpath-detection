@@ -10,7 +10,6 @@ from json import loads, dumps
 from detectors.YoloV11BarbellDetection import YoloV11BarbellDetection
 
 # Different possible responses from GET method of video_status
-STATUS_UPLOADED = "Uploaded"
 STATUS_PROCESSING = "Processing"
 STATUS_ERROR = "Error"
 STATUS_FINISHED = "Finished"
@@ -32,12 +31,6 @@ router = APIRouter(tags=["Video Upload and analysis"], prefix="/yolo")
 # be some sort of persistent storage (think maybe postgres + S3)
 # but for simplicity, we can keep things in memory
 videos = []
-
-# Keep track of the status of processing for each video ID
-# so that the front end knows when to update the UI for the user
-# to download the video or view results
-# id: status => ("Uploaded", "Processing", "Error ...", "Finished")
-video_status = {}
 
 # Initialize the model object only once,
 # Then call detector.init_video() for each video
@@ -81,8 +74,6 @@ async def yolo_video_upload(file: UploadFile) -> dict:
 
         logger.info(f"Uploaded {temp_input.name}")
 
-        video_status[video_id] = STATUS_UPLOADED
-
         detector.init_video(temp_input.name, temp_output.name, video_id)
 
         # background_tasks.add_task(detector.process_video)
@@ -90,13 +81,16 @@ async def yolo_video_upload(file: UploadFile) -> dict:
 
         videos.append(temp_output.name)
 
-        video_status[video_id] = STATUS_PROCESSING
         return {"message": "Video uploaded successfully. Processing has started",
                 "video_id": video_id}
 
     except Exception as e:
-        video_status[video_id] = f"STATUS_ERROR: {e}"
-        videos.append("ENCOUNTERED ERROR")  # to ensure length of arr correct
+        detector.update_state(video_id, f"{STATUS_ERROR}: {e}")
+
+        if len(videos) - 1 < video_id:
+            # to ensure length of arr correct
+            videos.append("ENCOUNTERED ERROR")
+
         return {"message": f"Encountered error while uploading video. Processing cancelled. Error: {e}",
                 "video_id": video_id}
 
@@ -133,23 +127,17 @@ async def yolo_video_status(video_id: int) -> dict:
         HTTPException: Video ID not in use
 
     Returns:
-        dict: Video status
+        dict: {"state": str "progress": float}
 
     Example Curl:
         curl -X 'GET' \
         'http://localhost/yolo/video/{video-id}/status' \
         -H 'accept: application/json'
     """
-    if video_id not in video_status:
+    if video_id not in detector.status:
         raise HTTPException(status_code=404, detail="Video not found.")
 
-    elif detector.data[video_id] == "N/A":
-        video_status[video_id] = STATUS_PROCESSING
-
-    elif video_status[video_id] == STATUS_PROCESSING and detector.data[video_id] != "N/A":
-        video_status[video_id] = STATUS_FINISHED
-
-    return {"status": video_status[video_id]}
+    return detector.get_status(video_id)
 
 
 @router.get("/video/{video_id}",
