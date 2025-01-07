@@ -1,6 +1,7 @@
-from typing import Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
+from json import loads, dumps
 from detectors.BarbellPhase import BarbellPhase        # BarbellPhase type
 
 # hold lists of data for each tracker_id
@@ -362,7 +363,7 @@ class BarbellTracker:
 
         return phase
 
-    def get_json_from_data(self) -> str:
+    def get_json_from_data(self) -> List[Dict[str, Any]]:
         df = pd.DataFrame({
             "Frame": self.frame_indices,
             "X_normalized": self.x_norms,
@@ -374,4 +375,4 @@ class BarbellTracker:
             "Velocity_Y": self.velocities_y,
             "Acceleration": self.accelerations
         })
-        return df.to_json()
+        return loads(df.to_json(orient='records'))

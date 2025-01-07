@@ -6,6 +6,7 @@ const VideoUpload = () => {
   const [videoId, setVideoId] = useState(null);
   const [message, setMessage] = useState(null);
   const [downloadLink, setDownloadLink] = useState(null);
+  const [resultsLink, setResultsLink] = useState(null);
   const [isUploading, setIsUploading] = useState(null);
   const [isProcessing, setIsProcessing] = useState(null);
   const [error, setError] = useState(null);
@@ -49,7 +50,7 @@ const VideoUpload = () => {
   };
 
   useEffect(() => {
-    if (isProcessing && videoId) {
+    if (isProcessing && (videoId != null && videoId != undefined)) {
       const interval = setInterval(async () => {
         try {
           const response = await fetch(
@@ -66,6 +67,9 @@ const VideoUpload = () => {
             setDownloadLink(
               `http://localhost/yolo/video/${videoId}`
             );
+            setResultsLink(
+              `http://localhost/yolo/video/${videoId}/data`
+            )
             setIsProcessing(false); // Stop polling
             //TODO Get results
           }
@@ -90,14 +94,19 @@ const VideoUpload = () => {
       {isUploading && <p>Uploading your video, please wait...</p>}
       {isProcessing && <p>Processing your video, please wait...</p>}
 
-      {message && <p>{message}</p>}
-      {videoId && <p> Video ID: {videoId}</p>}
+      {message && !isProcessing && !downloadLink && <p>{message}</p>}
+      {videoId != null && videoId != undefined && <p> Video ID: {videoId}</p>}
 
       {downloadLink && (
             <a href={downloadLink} download>
-              <button>Download Processed Video</button>
+              <button>Download Processed Video ({videoId}) </button>
             </a>
           )}
+      {resultsLink && (
+          <a href={resultsLink} download>
+            <button>Download Results of Video ({videoId}) </button>
+          </a>
+        )}
       {error && <p style={{ color: "red" }}>{JSON.stringify(error)}</p>}
     </div>
   );

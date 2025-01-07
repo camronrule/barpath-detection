@@ -3,6 +3,7 @@ from datetime import timedelta
 import time
 import cv2                                   # write data to video
 import pandas as pd                          # create output csv
+from json import loads, dumps                # handle JSON data
 import supervision as sv                     # annotate video
 from ultralytics import YOLO                 # detection, classification model
 from sys import maxsize                      # length of trace annotation
@@ -186,7 +187,7 @@ class YoloV11BarbellDetection:
     def _process_video_in_thread(self):  # -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker
 
-        Returns: 
+        Returns:
             Tuple[str, str]: The output video path and the output JSON str
         """
 

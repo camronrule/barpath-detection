@@ -1,15 +1,15 @@
-# For API operations and standards
 import asyncio
 import logging
 import os
 import tempfile
 from typing import Dict
 from fastapi import APIRouter, UploadFile, status, HTTPException
-from fastapi.responses import FileResponse
-# Our detector objects
+from fastapi.responses import FileResponse, JSONResponse
+from json import loads, dumps
+
 from detectors.YoloV11BarbellDetection import YoloV11BarbellDetection
 
-
+# Different possible responses from GET method of video_status
 STATUS_UPLOADED = "Uploaded"
 STATUS_PROCESSING = "Processing"
 STATUS_ERROR = "Error"
@@ -102,17 +102,22 @@ async def yolo_video_upload(file: UploadFile) -> dict:
 
 
 @router.get("/video/{video_id}/data")
-async def yolo_video_data(video_id: int) -> str:
+async def yolo_video_data(video_id: int) -> JSONResponse:
     """Get the data for a video by its ID.
 
     Arguments:
         video_id (int): The video ID to get data for
 
     Returns:
-        str: The JSON data for the video, as a string
+        JSONResponse: The JSON data for the video, as a string
+
+    Example Curl:
+        curl -X 'GET' \
+        'http://localhost/yolo/video/{video_id}/data' \
+        -H 'accept: application/json'
     """
     try:
-        return detector.data[video_id]
+        return JSONResponse(content=detector.data[video_id])
     except KeyError:
         raise HTTPException(status_code=404, detail="Video not found")
 
@@ -129,6 +134,11 @@ async def yolo_video_status(video_id: int) -> dict:
 
     Returns:
         dict: Video status
+
+    Example Curl:
+        curl -X 'GET' \
+        'http://localhost/yolo/video/{video-id}/status' \
+        -H 'accept: application/json'
     """
     if video_id not in video_status:
         raise HTTPException(status_code=404, detail="Video not found.")
@@ -151,7 +161,12 @@ async def yolo_video_download(video_id: int) -> FileResponse:
         video_id (int): The video ID to download
 
     Returns:
-        Response: The annotated video in MP4 format
+        Response: The annotated video file in MP4 format
+
+    Example Curl:
+        curl -X 'GET' \
+        'http://localhost/yolo/video/{video-id}' \
+        -H 'accept: application/json'
     """
     try:
         video_path = videos[video_id]
@@ -163,5 +178,5 @@ async def yolo_video_download(video_id: int) -> FileResponse:
             headers={
                 "Content-Disposition": f"attachment; filename={video_name}"}
         )
-    except KeyError:
+    except IndexError:
         raise HTTPException(status_code=404, detail="Video not found")
