@@ -7,10 +7,9 @@ from starlette.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Allow requests from the front end
+# Allow requests from the front end, which is running on port 5173
 origins = [
-    "http://localhost",
-    "http://localhost:3000"
+    "http://localhost:5173"
 ]
 
 app.add_middleware(
@@ -19,7 +18,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 app.include_router(yolo.router)
 

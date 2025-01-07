@@ -1,8 +1,6 @@
 import asyncio
 from datetime import timedelta
-import tempfile
 import time
-from typing import Tuple
 import cv2                                   # write data to video
 import pandas as pd                          # create output csv
 import supervision as sv                     # annotate video
@@ -34,20 +32,31 @@ class YoloV11BarbellDetection:
     # Confidence threshold
     CONF_THRESH = float(os.environ.get("YOLO_CONF_THRESHOLD", "0.60"))
 
-    def __init__(self, video_path_in: str, video_path_out: str) -> None:
-        """Initialize a YOLO v11 image detection model with a video
+    def __init__(self) -> None:
+        """Initialize a YOLO v11 image detection model
+        """
+        self.model = self.__load_model()
+        self.data = {}
+
+    def init_video(self, video_path_in: str, video_path_out: str, video_id: int) -> None:
+        """Take in a video for the YOLO v11 model
 
         Args:
-            video_path (str): Path to the input video
+            video_path_in (str): Path to the input video
+            video_path_out (str): Path to where the output video will be saved
+            video_id (int): ID of the video
         """
-
-        self.model = self.__load_model()
+        assert video_id not in self.data, "Video ID already exists"
 
         self.video_path_in = video_path_in
         self.video_path_out = video_path_out
+        self.video_id = video_id
 
         self.__setup_supervision()
         self.__barbell_tracker = self.__setup_barbell_tracker()
+
+        # show that we are not done processing this video yet
+        self.data[video_id] = "N/A"
 
     def __load_model(self) -> YOLO:
         """Load YOLO v11 model from path
@@ -164,7 +173,7 @@ class YoloV11BarbellDetection:
                                           lineType=cv2.LINE_AA)  # use LINE_8 for quicker writing
         return annotated_frame
 
-    async def process_video(self):
+    async def process_video(self, video_id: int):
         """
         """
         start = time.time()
@@ -172,7 +181,7 @@ class YoloV11BarbellDetection:
         await asyncio.to_thread(self._process_video_in_thread)
         end = time.time()
         logger.info(
-            f"Video processing finished took {str(timedelta(seconds=end-start))} to finish")
+            f"Processing of video {video_id} finished. Took {str(timedelta(seconds=end-start).total_seconds())} seconds")
 
     def _process_video_in_thread(self):  # -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker
@@ -182,7 +191,6 @@ class YoloV11BarbellDetection:
         """
 
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
-        # temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
 
         with sv.VideoSink(self.video_path_out, self.__video_info) as sink:
 
@@ -203,6 +211,7 @@ class YoloV11BarbellDetection:
                 sink.write_frame(annotated_frame)
 
         # return self.video_path_out, barbell_tracker.get_json_from_data()
+        self.data[self.video_id] = barbell_tracker.get_json_from_data()
         return
 
 

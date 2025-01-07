@@ -3,10 +3,17 @@ import asyncio
 import logging
 import os
 import tempfile
+from typing import Dict
 from fastapi import APIRouter, UploadFile, status, HTTPException
 from fastapi.responses import FileResponse
 # Our detector objects
 from detectors.YoloV11BarbellDetection import YoloV11BarbellDetection
+
+
+STATUS_UPLOADED = "Uploaded"
+STATUS_PROCESSING = "Processing"
+STATUS_ERROR = "Error"
+STATUS_FINISHED = "Finished"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,6 +33,16 @@ router = APIRouter(tags=["Video Upload and analysis"], prefix="/yolo")
 # but for simplicity, we can keep things in memory
 videos = []
 
+# Keep track of the status of processing for each video ID
+# so that the front end knows when to update the UI for the user
+# to download the video or view results
+# id: status => ("Uploaded", "Processing", "Error ...", "Finished")
+video_status = {}
+
+# Initialize the model object only once,
+# Then call detector.init_video() for each video
+detector = YoloV11BarbellDetection()
+
 
 @router.post("/",
              status_code=status.HTTP_201_CREATED,
@@ -40,29 +57,89 @@ async def yolo_video_upload(file: UploadFile) -> dict:
 
     Returns:
         dict: The video ID and the download URL
+
+    Example Curl:
+        curl -X 'POST' \
+        'http://localhost/yolo/' \
+        -H 'accept: application/json' \
+        -H 'Content-Type: multipart/form-data' \
+        -F 'file=@IMG_6860.MOV;type=video/quicktime'
     """
 
-    temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    video_id = len(videos)
+    logger.info(f"Receiving file {file.filename} with ID: {video_id}")
+    try:
 
-    logger.info(f"Uploading {temp_input.name}")
+        temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
 
-    # open file synchronously
-    with open(temp_input.name, "wb") as f:
-        f.write(await file.read())
+        logger.info(f"Uploading {temp_input.name}")
 
-    logger.info(f"Uploaded {temp_input.name}")
+        # open file synchronously
+        with open(temp_input.name, "wb") as f:
+            f.write(await file.read())
 
-    detector = YoloV11BarbellDetection(temp_input.name, temp_output.name)
+        logger.info(f"Uploaded {temp_input.name}")
 
-    # background_tasks.add_task(detector.process_video)
-    asyncio.create_task(detector.process_video())
+        video_status[video_id] = STATUS_UPLOADED
 
-    videos.append(temp_output.name)
-    video_id = len(videos) - 1
-    # return {"id": video_id, "download_url": f"/yolo/video/{video_id}"}
-    return {"message": "Video uploaded successfully. Processing has started",
-            "video_id": video_id}
+        detector.init_video(temp_input.name, temp_output.name, video_id)
+
+        # background_tasks.add_task(detector.process_video)
+        asyncio.create_task(detector.process_video(video_id))
+
+        videos.append(temp_output.name)
+
+        video_status[video_id] = STATUS_PROCESSING
+        return {"message": "Video uploaded successfully. Processing has started",
+                "video_id": video_id}
+
+    except Exception as e:
+        video_status[video_id] = f"STATUS_ERROR: {e}"
+        videos.append("ENCOUNTERED ERROR")  # to ensure length of arr correct
+        return {"message": f"Encountered error while uploading video. Processing cancelled. Error: {e}",
+                "video_id": video_id}
+
+
+@router.get("/video/{video_id}/data")
+async def yolo_video_data(video_id: int) -> str:
+    """Get the data for a video by its ID.
+
+    Arguments:
+        video_id (int): The video ID to get data for
+
+    Returns:
+        str: The JSON data for the video, as a string
+    """
+    try:
+        return detector.data[video_id]
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+
+@router.get("/video/{video_id}/status")
+async def yolo_video_status(video_id: int) -> dict:
+    """Check the processing status of a video
+
+    Args:
+        video_id (int): The video to check the status of
+
+    Raises:
+        HTTPException: Video ID not in use
+
+    Returns:
+        dict: Video status
+    """
+    if video_id not in video_status:
+        raise HTTPException(status_code=404, detail="Video not found.")
+
+    elif detector.data[video_id] == "N/A":
+        video_status[video_id] = STATUS_PROCESSING
+
+    elif video_status[video_id] == STATUS_PROCESSING and detector.data[video_id] != "N/A":
+        video_status[video_id] = STATUS_FINISHED
+
+    return {"status": video_status[video_id]}
 
 
 @router.get("/video/{video_id}",
