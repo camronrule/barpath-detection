@@ -34,19 +34,23 @@ class YoloV11BarbellDetection:
     Works most effectively with videos that have the entire barbell plate (specifically a kilo plate)
     visible for the entire duration of the video."""
 
-    PATH = os.environ.get("YOLO_WEIGHTS_PATH",
-                          "detectors/best.pt")       # Path to a model
+    DETECTOR_PATH = os.environ.get("DETECTOR_WEIGHTS_PATH",
+                                   "detectors/detection-best.pt")
+    CLASSIFIER_PATH = os.environ.get(
+        "CLASSIFIER_WEIGHTS_PATH", "detectors/classification-best.pt")
     # Confidence threshold
     CONF_THRESH = float(os.environ.get("YOLO_CONF_THRESHOLD", "0.60"))
 
     def __init__(self) -> None:
         """Initialize a YOLO v11 image detection model
         """
-        self.model = self.__load_model()
+        self.barbell_detector = self.__load_detector()
+        self.lift_classifier = self.__load_classifier()
         self.data = {}
         # video_id : {"state": str, "progress": float}
         self.status = defaultdict(
             lambda: {"state": STATE_PROCESSING, "progress": "0.0"})
+        self.speeds = {'preprocess': [], 'inference': [], 'postprocess': []}
 
     def init_video(self, video_path_in: str, video_path_out: str, video_id: int) -> None:
         """Take in a video for the YOLO v11 model
@@ -67,18 +71,32 @@ class YoloV11BarbellDetection:
 
         # show that we are not done processing this video yet
         self.data[video_id] = "N/A"
+
         self.update_progress(video_id, 0)
         self.update_state(video_id, STATE_PROCESSING)
 
-    def __load_model(self) -> YOLO:
-        """Load YOLO v11 model from path
+    def __load_classifier(self) -> YOLO:
+        """Load YOLO v11 lift classifier from path
+
+        Returns:
+            YOLO: The loaded YOLO v11 classification model
+        """
+        logger.info(
+            f"Loading classification model from {YoloV11BarbellDetection.CLASSIFIER_PATH}")
+        model = YOLO(YoloV11BarbellDetection.CLASSIFIER_PATH)
+        logger.info("Classification model loaded successfully")
+        return model
+
+    def __load_detector(self) -> YOLO:
+        """Load YOLO v11 barbell detector from path
 
         Returns:
             YOLO: The loaded YOLO v11 detection model
         """
-        logger.info(f"Loading model from {YoloV11BarbellDetection.PATH}")
-        model = YOLO(YoloV11BarbellDetection.PATH)
-        logger.info("Model loaded successfully")
+        logger.info(
+            f"Loading detection model from {YoloV11BarbellDetection.DETECTOR_PATH}")
+        model = YOLO(YoloV11BarbellDetection.DETECTOR_PATH)
+        logger.info("Detection model loaded successfully")
         return model
 
     def __setup_supervision(self) -> None:
@@ -89,8 +107,6 @@ class YoloV11BarbellDetection:
         # utilities for processing video frames
         self.__video_info = sv.VideoInfo.from_video_path(
             video_path=self.video_path_in)
-        self.__frame_generator = sv.get_video_frames_generator(
-            source_path=self.video_path_in)
 
         # variables for writing to video, dependedent on video specifications
         self.__thickness = sv.calculate_optimal_line_thickness(
@@ -117,7 +133,7 @@ class YoloV11BarbellDetection:
         return BarbellTracker()
 
     def __update_sv(self, results: list) -> sv.Detections:
-        """Update Supervision library with new detections, and filter results
+        """Update Supervision library with new detections
 
         Args:
             results (list): List of results from the model
@@ -129,9 +145,6 @@ class YoloV11BarbellDetection:
         detections = sv.Detections.from_ultralytics(results)
         detections = self.__sv_tracker.update_with_detections(detections)
         detections = self.__smoother.update_with_detections(detections)
-
-        # filter to only "barbell" - not "bar"
-        detections = detections[detections.class_id == 1]
 
         return detections
 
@@ -159,13 +172,23 @@ class YoloV11BarbellDetection:
         Returns:
             sv.Detections: Supervision formatted detections in a frame
         """
+        try:
+            results = self.barbell_detector.predict(
+                [frame],
+                conf=YoloV11BarbellDetection.CONF_THRESH,
+                verbose=False,
+                classes=[1])  # filter detections to only Barbell - not Bar
 
-        result = self.model(
-            [frame],
-            conf=YoloV11BarbellDetection.CONF_THRESH,
-            verbose=False)[0]
-        # update sv_tracker, smoother with the results
-        detections = self.__update_sv(result)
+            result = results[0]
+
+            self.speeds['preprocess'].append(result.speed['preprocess'])
+            self.speeds['inference'].append(result.speed['inference'])
+            self.speeds['postprocess'].append(result.speed['postprocess'])
+
+            # update sv_tracker, smoother with the results
+            detections = self.__update_sv(result)
+        except Exception as e:
+            print(e)
         return detections
 
     def __write_to_frame(self, detections: sv.Detections, frame: np.ndarray, label: list, formatted_strs: list) -> np.ndarray:
@@ -203,13 +226,43 @@ class YoloV11BarbellDetection:
         """
         """
         start = time.time()
-        logger.info(f"Video processing starting")
-        await asyncio.to_thread(self._process_video_in_thread)
+        logger.info(f"Lift classification starting")
+        await asyncio.to_thread(self.__classify_lift_in_thread)
         end = time.time()
         logger.info(
-            f"Processing of video {video_id} finished. Took {str(timedelta(seconds=end-start).total_seconds())} seconds")
+            f"Lift classification in video {video_id} finished. Took {str(timedelta(seconds=end-start).total_seconds())} seconds")
 
-    def _process_video_in_thread(self):  # -> Tuple[str, str]:
+        start = time.time()
+        logger.info(f"Barbell detection starting")
+        await asyncio.to_thread(self._detect_barbell_in_thread)
+        end = time.time()
+        logger.info(
+            f"Barbell detection in video {video_id} finished. Took {str(timedelta(seconds=end-start).total_seconds())} seconds")
+
+    def __classify_lift_in_thread(self):
+        """Classify the lift in the video using the YOLO v11 classifier"""
+        names = self.lift_classifier.names
+        try:
+            for frame_idx, frame in enumerate(sv.get_video_frames_generator(source_path=self.video_path_in)):
+                print(frame_idx)
+                '''
+                1. get lift classification from classifier
+                2. if meet threshold, update BB tracker with this info
+                3. else, continue
+                '''
+                results = self.lift_classifier(frame, verbose=False)
+                for result in results:
+                    if result.probs.top1conf >= 0.99:
+                        self.__barbell_tracker.set_lift_type(
+                            names[result.probs.top1])
+                        return
+
+        except Exception as e:
+            print(e)
+            self.update_state(self.video_id, f"{STATE_ERROR}: {e}")
+            self.update_progress(self.video_id, -1)
+
+    def _detect_barbell_in_thread(self):  # -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker
 
         Returns:
@@ -225,7 +278,8 @@ class YoloV11BarbellDetection:
                 # get velocity data by passing detections to the barbell tracker
                 # format velocty data into formatted_strings, then append to
                 # frame and write to output video
-                for frame_idx, frame in enumerate(self.__frame_generator):
+                for frame_idx, frame in enumerate(sv.get_video_frames_generator(
+                        source_path=self.video_path_in)):
                     detections = self(frame)
                     label, values = barbell_tracker.update(
                         frame_idx, detections, self.__video_info)
@@ -241,14 +295,17 @@ class YoloV11BarbellDetection:
                     self.update_progress(
                         self.video_id, (frame_idx / self.__video_info.total_frames))
 
-        except Exception:
-            self.update_state(self.video_id, STATE_ERROR)
+        except Exception as e:
+            self.update_state(self.video_id, f"{STATE_ERROR}: {e}")
             self.update_progress(self.video_id, -1)
 
         self.update_state(self.video_id, STATE_FINISHED)
         # should be 1 anyway, but just to be sure
         self.update_progress(self.video_id, 1.0)
         self.data[self.video_id] = barbell_tracker.get_json_from_data()
+        for k, v in self.speeds.items():
+            avg = sum(v) / len(v)
+            print(f"{k}: {avg:2f}")
         return
 
 

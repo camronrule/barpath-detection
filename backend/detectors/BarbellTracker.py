@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
-from json import loads, dumps
+from json import loads
 from detectors.BarbellPhase import BarbellPhase        # BarbellPhase type
 
 # hold lists of data for each tracker_id
@@ -78,6 +78,16 @@ class BarbellTracker:
             "RACKING": {"x": [], "y": []}
         }
         self.phase = BarbellPhase.RACKED  # initial phase = RACKED
+        self.__lift = None  # not known yet, will be updated before barbell tracking starts
+
+    def set_lift_type(self, lift: str) -> None:
+        assert lift in ["Squat", "Bench", "Deadlift"], "Unknown lift type"
+        self.__lift = lift
+
+    def get_lift_type(self) -> str:
+        if self.__lift == None:
+            return ""
+        return self.__lift
 
     def get_mean(self, data: list, length: int = None) -> float:
         """Get average of the last 'length' elements in 'data'
@@ -366,6 +376,8 @@ class BarbellTracker:
     def get_json_from_data(self) -> List[Dict[str, Any]]:
         df = pd.DataFrame({
             "Frame": self.frame_indices,
+            # identify lift type
+            "Lift": [self.__lift] * len(self.frame_indices),
             "X_normalized": self.x_norms,
             "Y_normalized": self.y_norms,
             "Delta_X": self.delta_x_outs,
