@@ -257,7 +257,7 @@ class YoloV11BarbellDetection:
                         logger.info(
                             f"Lift classified as: {names[result.probs.top1]}")
                         logger.info(
-                            f"Lift classification took {frame_idx} frames to reach {result.probs.top1conf:.4f} confidence")
+                            f"Lift classification took {frame_idx+1} frames to reach {result.probs.top1conf:.4f} confidence")
                         return
 
         except Exception as e:
@@ -302,6 +302,7 @@ class YoloV11BarbellDetection:
             print(e)
             self.update_state(self.video_id, f"{STATE_ERROR}: {e}")
             self.update_progress(self.video_id, -1)
+            raise e
 
         self.update_state(self.video_id, STATE_FINISHED)
         # should be 1 anyway, but just to be sure

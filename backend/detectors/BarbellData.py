@@ -45,7 +45,7 @@ class BarbellData:
             "RACKING": {"x": [], "y": []}
         }
 
-        self.phase = BarbellPhase.RACKED  # initial phase = RACKED
+        self.phase = BarbellPhase.RACKED
         self.lift = None  # not known yet, will be updated before barbell tracking starts
 
     def get_v_x(self) -> float:
@@ -55,6 +55,11 @@ class BarbellData:
         return self.get_mean(self.velocities_y, self.AVG_VELOCITY_OVER_FRAMES)
 
     def set_lift_type(self, lift: str) -> None:
+        """Set the lift type from the lift classifier
+
+        Args:
+            lift (str): The lift
+        """
         assert lift in ["Squat", "Bench", "Deadlift"], "Unknown lift type"
         self.lift = lift
 
