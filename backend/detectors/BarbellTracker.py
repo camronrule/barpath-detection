@@ -2,13 +2,14 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from json import loads
-from detectors.BarbellPhase import BarbellPhase        # BarbellPhase type
 
 # hold lists of data for each tracker_id
 from collections import defaultdict, deque
 import supervision as sv                     # annotate video
-# to calculate averages in get_mean()
-from statistics import fmean
+
+from .PhaseDetector import PhaseDetector
+from .BarbellData import BarbellData
+from .BarbellPhase import BarbellPhase
 
 
 class BarbellTracker:
@@ -19,7 +20,6 @@ class BarbellTracker:
     alpha = 0.2
 
     # ** VARIABLES USED IN PHASE DETECTION **
-    REP_COMPLETED = False                    # whether or not a rep has been completed
     # number of frames to buffer before phase detection
     PHASE_BUFFER_LENGTH = 5
     LAST_FRAME_PHASE_CHANGED = 0             # frame index of the last phase change
@@ -47,65 +47,14 @@ class BarbellTracker:
         # displayed speed value, for each ID
         self.__display_speed = defaultdict(lambda: 0)
 
-        # hold specific barbell data for each frame
-        # used to calculate other data (e.g. velocity, acceleration),
-        # to detect the barbell phase, or is sent to the barbell detection
-        # class to be annotated on the video
-        self.frame_indices = []  # index of frame
-        self.x_norms = []       # normalized x position of barbell center
-        self.y_norms = []       # normalized y position of barbell center
-        # change in x position (in meters) since last frame
-        self.delta_x_outs = []
-        # change in y position (in meters) since last frame
-        self.delta_y_outs = []
-        # smoothed speed of barbell (in meters per second)
-        self.speeds = []
-        # velocity in x direction (in meters per second)
-        self.velocities_x = []
-        # velocity in y direction (in meters per second)
-        self.velocities_y = []
-        self.accelerations = []  # acceleration (in meters per second squared)
-
-        # x,y norm values for each frame that we are in each position
-        # *edge case*: values are only updated in frames that a barbell is detected
-        self.phase_data = {
-            "RACKED": {"x": [], "y": []},
-            "UNRACKING": {"x": [], "y": []},
-            "TOP": {"x": [], "y": []},
-            "ECCENTRIC": {"x": [], "y": []},
-            "BOTTOM": {"x": [], "y": []},
-            "CONCENTRIC": {"x": [], "y": []},
-            "RACKING": {"x": [], "y": []}
-        }
-        self.phase = BarbellPhase.RACKED  # initial phase = RACKED
-        self.__lift = None  # not known yet, will be updated before barbell tracking starts
+        self.data = BarbellData()
 
     def set_lift_type(self, lift: str) -> None:
         assert lift in ["Squat", "Bench", "Deadlift"], "Unknown lift type"
-        self.__lift = lift
+        self.data.set_lift_type(lift)
 
     def get_lift_type(self) -> str:
-        if self.__lift == None:
-            return ""
-        return self.__lift
-
-    def get_mean(self, data: list, length: int = None) -> float:
-        """Get average of the last 'length' elements in 'data'
-
-        Args:
-            data (list): List of numerical data to average
-            length (int, optional): Number of elements to average over. Defaults to len(data).
-
-        Returns:
-            int: The average of the last 'length' elements in 'data'
-        """
-        if length == 0 or len(data) == 0:
-            return 0
-        elif length > len(data):
-            length = len(data)
-        elif length is None:
-            length = len(data)
-        return fmean(data[-length:])
+        return self.data.get_lift_type()
 
     def update(self, frame_idx: int, detections: sv.Detections, video_info: sv.VideoInfo) -> Tuple[list, BarbellPhase, float, float]:
         """Update barbell data using the coordinates of the barbell in the current frame
@@ -177,39 +126,39 @@ class BarbellTracker:
                 # unit: meters per second squared
                 a_x = a_y = 0
                 # only calculate acceleration if we have previous velocity data
-                if len(self.velocities_x) > 0 and len(self.velocities_y) > 0:
-                    a_x = (v_x - self.velocities_x[-1]) / delta_t
-                    a_y = (v_y - self.velocities_y[-1]) / delta_t
+                if len(self.data.velocities_x) > 0 and len(self.data.velocities_y) > 0:
+                    a_x = (v_x - self.data.velocities_x[-1]) / delta_t
+                    a_y = (v_y - self.data.velocities_y[-1]) / delta_t
                     a_total = (a_x ** 2 + a_y ** 2) ** 0.5
-                    self.accelerations.append(a_total)
+                    self.data.accelerations.append(a_total)
                 else:  # to ensure that all data is same length
-                    self.accelerations.append(None)
+                    self.data.accelerations.append(None)
 
                 # update internal data
-                self.frame_indices.append(frame_idx)
-                self.x_norms.append(plate_center[0] / video_info.width)
-                self.y_norms.append(plate_center[1] / video_info.height)
-                self.delta_x_outs.append(delta_x_meters)
-                self.delta_y_outs.append(delta_y_meters)
-                self.velocities_x.append(v_x)
-                self.velocities_y.append(v_y)
-                self.speeds.append(speed_mps)
+                self.data.frame_indices.append(frame_idx)
+                self.data.x_norms.append(plate_center[0] / video_info.width)
+                self.data.y_norms.append(plate_center[1] / video_info.height)
+                self.data.delta_x_outs.append(delta_x_meters)
+                self.data.delta_y_outs.append(delta_y_meters)
+                self.data.velocities_x.append(v_x)
+                self.data.velocities_y.append(v_y)
+                self.data.speeds.append(speed_mps)
 
                 # decide if we need to update the displayed speed value
                 # we only update every SPEED_UPDATE_INTERVAL frames
                 labels.append(f"speed: {self.__display_speed[id]:.2f}")
                 self.__update_speed_throttle(id, smoothed_speed)
 
-                self.phase = self.__detect_phase(self.phase)
+                self.data.phase = self.__detect_phase(self.data.phase)
 
                 # end elif len(coordinates[id]) == 2
             # end if detections > 0
 
-        formatted_v_x = f"{self.get_mean(self.velocities_x, self.AVG_VELOCITY_OVER_FRAMES):+.2f}"
-        formatted_v_y = f"{self.get_mean(self.velocities_y, self.AVG_VELOCITY_OVER_FRAMES):+.2f}"
+        formatted_v_x = f"{self.data.get_mean(self.data.velocities_x, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
+        formatted_v_y = f"{self.data.get_mean(self.data.velocities_y, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
 
         values = {
-            "Phase": self.phase.name,
+            "Phase": self.data.phase.name,
             "v_x": formatted_v_x,
             "v_y": formatted_v_y
         }
@@ -300,91 +249,32 @@ class BarbellTracker:
         """
 
         # not enough data, return passed in phase
-        if self.frame_indices[-1] < self.PHASE_BUFFER_LENGTH:
+        if self.data.frame_indices[-1] < self.PHASE_BUFFER_LENGTH:
             return phase
 
         # store x,y norm values for each phase
         # then we can verify that changes in velocity are changes in position as well
-        self.phase_data[phase.name]["x"].append(self.x_norms[-1])
-        self.phase_data[phase.name]["y"].append(self.y_norms[-1])
+        self.data.phase_data[phase.name]["x"].append(self.data.x_norms[-1])
+        self.data.phase_data[phase.name]["y"].append(self.data.y_norms[-1])
 
         # require that a phase change must be at least
         # FRAMES_BETWEEN_PHASE_CHANGE frames apart
-        if self.frame_indices[-1] - self.LAST_FRAME_PHASE_CHANGED < self.FRAMES_BETWEEN_PHASE_CHANGE:
+        if self.data.frame_indices[-1] - self.LAST_FRAME_PHASE_CHANGED < self.FRAMES_BETWEEN_PHASE_CHANGE:
             return phase
 
         phase_holder = phase  # save current phase for comparison later
 
-        v_x = self.get_mean(self.velocities_x, self.AVG_VELOCITY_OVER_FRAMES)
-        v_y = self.get_mean(self.velocities_y, self.AVG_VELOCITY_OVER_FRAMES)
-
-        match (phase):
-
-            case BarbellPhase.RACKED:
-                # we have x or y movement and rep has not been done yet
-                # (unracking only happens before the reps start) -> unracking
-                if ((v_y < -0.05) or (abs(v_x) > 0.05)) and not self.REP_COMPLETED:
-                    phase = BarbellPhase.UNRACKING
-                # check to see if video starts unracked already, therefore we skip
-                # if abs(v_x < 0.01) and v_y > 0.0:
-                    # phase = BarbellPhase.CONCENTRIC
-
-            case BarbellPhase.UNRACKING:
-                # no movement in x direction, and x position is
-                # different from the x of the start of the rack position
-                if (abs(v_x) < 0.005) and (abs(self.x_norms[-1] - self.phase_data[BarbellPhase.RACKED.name]["x"][-1]) > 0.005):
-                    phase = BarbellPhase.TOP
-                # elif we missed the 'TOP' -> if large y movement, go strait to concentric
-
-            case BarbellPhase.TOP:  # if coming from a previous rep -> redraw line
-                # if moving down in the y direction, and y_norm has changed since the beginning of TOP phase
-                if (v_y > 0.04) and (abs(self.y_norms[-1] - self.phase_data[BarbellPhase.TOP.name]["y"][1]) > 0.01):
-                    phase = BarbellPhase.ECCENTRIC
-                # moving in x direction, and rep has been done
-                # TODO check that x is moving closer to rack
-                elif (abs(v_x) > 0.05) and self.REP_COMPLETED:
-                    phase = BarbellPhase.RACKING
-
-            case BarbellPhase.ECCENTRIC:
-                # no longer moving down => in the hole
-                if v_y < 0.03:
-                    phase = BarbellPhase.BOTTOM
-
-            case BarbellPhase.BOTTOM:
-                # y velocity is negative when going up
-                if v_y < -0.08:
-                    phase = BarbellPhase.CONCENTRIC
-
-            case BarbellPhase.CONCENTRIC:
-                # y vel is negative when going up
-                if v_y > -0.01:
-                    phase = BarbellPhase.TOP
-                    self.REP_COMPLETED = True
-
-            case BarbellPhase.RACKING:
-                if abs(v_x) < 0.03 and abs(v_y) < 0.03:
-                    phase = BarbellPhase.RACKED
+        # DETECT PHASE HERE
+        detector = PhaseDetector(self.get_lift_type())
+        phase = detector.detect(phase, self.data)
 
         # if we detected a new phase, then update
         # the variable holding the last frame changed
         # to the most recent frame
         if phase_holder is not phase:
-            self.LAST_FRAME_PHASE_CHANGED = self.frame_indices[-1]
+            self.LAST_FRAME_PHASE_CHANGED = self.data.frame_indices[-1]
 
         return phase
 
     def get_json_from_data(self) -> List[Dict[str, Any]]:
-        df = pd.DataFrame({
-            "Frame": self.frame_indices,
-            # identify lift type
-            "Lift": [self.__lift] * len(self.frame_indices),
-            "X_normalized": self.x_norms,
-            "Y_normalized": self.y_norms,
-            "Delta_X": self.delta_x_outs,
-            "Delta Y": self.delta_y_outs,
-            "Speed": self.speeds,
-            "Velocity_X": self.velocities_x,
-            "Velocity_Y": self.velocities_y,
-            "Acceleration": self.accelerations
-        })
-        return loads(df.to_json(orient='records'))
+        return self.data.get_json_from_data()

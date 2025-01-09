@@ -181,9 +181,8 @@ class YoloV11BarbellDetection:
 
             result = results[0]
 
-            self.speeds['preprocess'].append(result.speed['preprocess'])
-            self.speeds['inference'].append(result.speed['inference'])
-            self.speeds['postprocess'].append(result.speed['postprocess'])
+            for k, v in result.speed.items():
+                self.speeds[k].append(result.speed[k])
 
             # update sv_tracker, smoother with the results
             detections = self.__update_sv(result)
@@ -230,21 +229,21 @@ class YoloV11BarbellDetection:
         await asyncio.to_thread(self.__classify_lift_in_thread)
         end = time.time()
         logger.info(
-            f"Lift classification in video {video_id} finished. Took {str(timedelta(seconds=end-start).total_seconds())} seconds")
+            f"Lift classification in video {video_id} finished. Took {float(timedelta(seconds=end-start).total_seconds()):.2f} seconds")
 
         start = time.time()
         logger.info(f"Barbell detection starting")
         await asyncio.to_thread(self._detect_barbell_in_thread)
         end = time.time()
         logger.info(
-            f"Barbell detection in video {video_id} finished. Took {str(timedelta(seconds=end-start).total_seconds())} seconds")
+            f"Barbell detection in video {video_id} finished. Took {float(timedelta(seconds=end-start).total_seconds()):.2f} seconds")
 
     def __classify_lift_in_thread(self):
         """Classify the lift in the video using the YOLO v11 classifier"""
+        LIFT_CONF_THRESH = 0.99
         names = self.lift_classifier.names
         try:
             for frame_idx, frame in enumerate(sv.get_video_frames_generator(source_path=self.video_path_in)):
-                print(frame_idx)
                 '''
                 1. get lift classification from classifier
                 2. if meet threshold, update BB tracker with this info
@@ -252,9 +251,13 @@ class YoloV11BarbellDetection:
                 '''
                 results = self.lift_classifier(frame, verbose=False)
                 for result in results:
-                    if result.probs.top1conf >= 0.99:
+                    if result.probs.top1conf >= LIFT_CONF_THRESH:
                         self.__barbell_tracker.set_lift_type(
                             names[result.probs.top1])
+                        logger.info(
+                            f"Lift classified as: {names[result.probs.top1]}")
+                        logger.info(
+                            f"Lift classification took {frame_idx} frames to reach {result.probs.top1conf:.4f} confidence")
                         return
 
         except Exception as e:
@@ -296,6 +299,7 @@ class YoloV11BarbellDetection:
                         self.video_id, (frame_idx / self.__video_info.total_frames))
 
         except Exception as e:
+            print(e)
             self.update_state(self.video_id, f"{STATE_ERROR}: {e}")
             self.update_progress(self.video_id, -1)
 
@@ -303,9 +307,14 @@ class YoloV11BarbellDetection:
         # should be 1 anyway, but just to be sure
         self.update_progress(self.video_id, 1.0)
         self.data[self.video_id] = barbell_tracker.get_json_from_data()
+
+        # print average processing time
+        processing_time = ""
         for k, v in self.speeds.items():
             avg = sum(v) / len(v)
-            print(f"{k}: {avg:2f}")
+            processing_time += f"\n\t{k}: {avg:.2f}"
+        logger.info(f"Average processing time (ms): {processing_time}")
+
         return
 
 
