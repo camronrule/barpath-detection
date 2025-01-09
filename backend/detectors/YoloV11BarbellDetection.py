@@ -124,7 +124,7 @@ class YoloV11BarbellDetection:
         self.__label_annotator = sv.LabelAnnotator(
             text_scale=self.__text_scale, text_thickness=self.__thickness)  # writes the speed label to the barbell
         # length = maxsize, draw for the whole video
-        self.__trace_annotator = sv.TraceAnnotator(trace_length=maxsize)
+        self.__trace_annotator = sv.TraceAnnotator(trace_length=1)
 
     def __setup_barbell_tracker(self) -> BarbellTracker:
         """Setup the BarbellTracker class for tracking and phase detection"""
