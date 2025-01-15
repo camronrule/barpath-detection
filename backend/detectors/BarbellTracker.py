@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Tuple
 
+import cv2
+import numpy as np
 import pandas as pd
 from json import loads
 
@@ -69,7 +71,7 @@ class BarbellTracker:
         """
         labels = []  # will hold either BB speed or "", to be appended to the bounding box
 
-        if len(detections) > 0:  # if a detection was found
+        if not detections.empty():  # if a detection was found
 
             # get plate size for scaling
             coords = detections.xyxy[0]  # [x1, y1, x2, y2]
@@ -81,8 +83,12 @@ class BarbellTracker:
 
             id = detections.tracker_id[0]  # id of this detection (barbell)
 
+            """TODO - update rep num if necessary
+            """
+
             plate_center = detections.get_anchors_coordinates(sv.Position.CENTER)[
                 0]  # [x, y]
+            self.__add_rep_to_data(id, plate_center)
             # update x,y coordinates for displacement calculation
             self.__update_coordinates(id, plate_center)
 
@@ -160,7 +166,8 @@ class BarbellTracker:
         values = {
             "Phase": self.data.phase.name,
             "v_x": formatted_v_x,
-            "v_y": formatted_v_y
+            "v_y": formatted_v_y,
+            "rep_num": self.data.get_rep_num()
         }
 
         return labels, values
@@ -180,7 +187,7 @@ class BarbellTracker:
         return self.PLATE_SIZE_METERS / plate_size_pixels
 
     def __update_coordinates(self, id: int, plate_center: list) -> None:
-        """Update coordinates list with the center coords of this barbell
+        """Update internal coordinates list with the center coords of this barbell
 
         Args:
             id (int): The ID of the tracked barbell
@@ -237,6 +244,87 @@ class BarbellTracker:
             # display this speed
             self.__display_speed[id] = smoothed_speed
             self.__frame_counter[id] = 0  # reset throttle count
+
+    def __add_rep_to_data(self, id: int, center_coords: List[float]) -> None:
+        """Add rep to the data.reps_history arr, if the bar should be tracked in this frame
+
+        Args:
+            center_coords List[float]: The center coordinates of the detection
+
+        """
+        current_rep = self.data.get_rep_num()
+        reps = self.data.reps_history[id]
+        rep = reps[current_rep]
+
+        if self.__should_draw_line():
+            rep.append((float(center_coords[0]), float(center_coords[1])))
+
+    def __should_draw_line(self) -> bool:
+        """Return if the current rep is in a phase that should be drawn
+
+        i.e., not in RACKING / UNRACKING / RACKED
+
+        Returns:
+            bool: Whether or not the current rep is in a phase that should be drawn
+        """
+        phase = self.data.phase
+        lift = self.data.get_lift_type()
+
+        match lift:
+            case "Deadlift":
+                return phase in [BarbellPhase.CONCENTRIC,
+                                 BarbellPhase.ECCENTRIC,
+                                 BarbellPhase.TOP,
+                                 BarbellPhase.BOTTOM]
+            case "Bench" | "Squat":
+                return phase in [BarbellPhase.CONCENTRIC,
+                                 BarbellPhase.ECCENTRIC,
+                                 BarbellPhase.TOP,
+                                 BarbellPhase.BOTTOM]
+
+    def __rep_is_active(self, rep_num: int) -> bool:
+        """Determine if the specified rep is currently being done
+
+        Args:
+            rep_num (int): The rep that is being referenced
+
+        Returns:
+            bool: True if the rep was still being done during the last frame, false otherwise
+        """
+        return self.data.rep_num == rep_num
+
+    def write_trace_annotation(self, frame: np.ndarray) -> np.ndarray:
+        """Trace the barbell path through the rep history
+
+        Args:
+            frame (np.ndarray): The frame to be written on
+
+        Returns:
+            np.ndarray: The input frame with trace annotations applied
+        """
+        # for each barbell ID
+        for tracker_id in self.data.reps_history:
+            reps_by_id = self.data.reps_history[tracker_id]
+
+            # for the coords of each rep for this id
+            for rep_num in reps_by_id:
+                rep = reps_by_id[rep_num]
+
+                # if there are any coords to write
+                if len(rep) > 0:
+
+                    # all coords from when this rep passed __should_draw_line()
+                    points = np.hstack(rep).astype(np.int32).reshape(
+                        (-1, 1, 2))
+
+                    # trace color is based on if that rep is active:
+                    # active -> lime green, inactive -> gray
+                    color = (50, 205, 50) if self.__rep_is_active(
+                        rep_num) else (173, 173, 173)
+
+                    cv2.polylines(frame, [
+                        points], isClosed=False, color=color, thickness=10, lineType=cv2.LINE_AA)
+        return frame
 
     def __detect_phase(self, phase):
         """From the current phase, detect the next phase based on the current velocity and position

@@ -1,6 +1,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import timedelta
+import sys
 import time
 import cv2                                   # write data to video
 import pandas as pd                          # create output csv
@@ -115,8 +116,6 @@ class YoloV11BarbellDetection:
             resolution_wh=self.__video_info.resolution_wh)
 
         # Supverision classes for smooth and simple video annotation
-        self.__sv_tracker = sv.ByteTrack(
-            frame_rate=self.__video_info.fps)  # add history line to barball
         # smooth bounding boxes while moving
         self.__smoother = sv.DetectionsSmoother()
         self.__box_annotator = sv.BoxCornerAnnotator(
@@ -143,7 +142,6 @@ class YoloV11BarbellDetection:
         """
 
         detections = sv.Detections.from_ultralytics(results)
-        detections = self.__sv_tracker.update_with_detections(detections)
         detections = self.__smoother.update_with_detections(detections)
 
         return detections
@@ -173,21 +171,24 @@ class YoloV11BarbellDetection:
             sv.Detections: Supervision formatted detections in a frame
         """
         try:
-            results = self.barbell_detector.predict(
+            results = self.barbell_detector.track(
                 [frame],
+                persist=True,  # track bounding box between frames
                 conf=YoloV11BarbellDetection.CONF_THRESH,
-                verbose=False,
+                verbose=False,  # prevent console output
                 classes=[1])  # filter detections to only Barbell - not Bar
 
             result = results[0]
 
+            # save pre/post processing time, inference time
             for k, v in result.speed.items():
                 self.speeds[k].append(result.speed[k])
 
-            # update sv_tracker, smoother with the results
+            # update smoother with the results
             detections = self.__update_sv(result)
         except Exception as e:
             print(e)
+            sys.exit()
         return detections
 
     def __write_to_frame(self, detections: sv.Detections, frame: np.ndarray, label: list, formatted_strs: list) -> np.ndarray:
@@ -205,11 +206,11 @@ class YoloV11BarbellDetection:
 
         annotated_frame = self.__box_annotator.annotate(
             frame.copy(), detections)
-        annotated_frame = self.__trace_annotator.annotate(
-            annotated_frame, detections)
+        # annotated_frame = self.__trace_annotator.annotate(annotated_frame, detections)
         annotated_frame = self.__label_annotator.annotate(
             annotated_frame, detections, labels=label)
 
+        # write v_x, v_y, BarbellPhase
         for idx, text in enumerate(formatted_strs):
             annotated_frame = cv2.putText(img=annotated_frame,
                                           text=text,
@@ -219,6 +220,11 @@ class YoloV11BarbellDetection:
                                           fontScale=self.__text_scale*2,
                                           thickness=self.__thickness,
                                           lineType=cv2.LINE_AA)  # use LINE_8 for quicker writing
+
+        # custom trace annotation
+        annotated_frame = self.__barbell_tracker.write_trace_annotation(
+            annotated_frame)
+
         return annotated_frame
 
     async def process_video(self, video_id: int):
@@ -240,10 +246,11 @@ class YoloV11BarbellDetection:
 
     def __classify_lift_in_thread(self):
         """Classify the lift in the video using the YOLO v11 classifier"""
-        LIFT_CONF_THRESH = 0.99
+        LIFT_CONF_THRESH = 0.995
         names = self.lift_classifier.names
         try:
-            for frame_idx, frame in enumerate(sv.get_video_frames_generator(source_path=self.video_path_in)):
+            for frame_idx, frame in enumerate(sv.get_video_frames_generator(source_path=self.video_path_in,
+                                                                            stride=3)):
                 '''
                 1. get lift classification from classifier
                 2. if meet threshold, update BB tracker with this info
@@ -259,11 +266,15 @@ class YoloV11BarbellDetection:
                         logger.info(
                             f"Lift classification took {frame_idx+1} frames to reach {result.probs.top1conf:.4f} confidence")
                         return
+            else:
+                raise Exception(
+                    "Not able to classify lift. Manual lift classification is WIP.")  # TODO manual lift classification
 
         except Exception as e:
             print(e)
             self.update_state(self.video_id, f"{STATE_ERROR}: {e}")
             self.update_progress(self.video_id, -1)
+            sys.exit()
 
     def _detect_barbell_in_thread(self):  # -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker

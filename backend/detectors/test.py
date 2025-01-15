@@ -67,7 +67,6 @@ video_path = "IMG_6650.MOV"
 cap = cv2.VideoCapture(video_path)
 
 # Store the track history
-track_history = defaultdict(lambda: [])
 # reps_history = {tracker_id : [rep_num (int): [(x: (float), y: (float)), (x,y), (x,y), ...]]}
 reps_history = defaultdict(lambda: defaultdict(list))
 
@@ -100,17 +99,17 @@ while ret:
     # Plot the tracks of each individual detection
     for box, track_id in zip(boxes, track_ids):
         x, y, w, h = box
-        reps = reps_history[track_id]
+        reps_by_id = reps_history[track_id]
 
         current_rep = get_rep_num(count)
-        rep = reps[current_rep]
+        rep = reps_by_id[current_rep]
         if draw_line(count):
             rep.append((float(x), float(y)))
 
         if (len(rep) > 0):  # if we have reps to track
-            for rep_num in reps:
-                if (len(reps[rep_num]) > 0):
-                    points = np.hstack(reps[rep_num]).astype(np.int32).reshape(
+            for rep_num in reps_by_id:
+                if (len(reps_by_id[rep_num]) > 0):
+                    points = np.hstack(reps_by_id[rep_num]).astype(np.int32).reshape(
                         (-1, 1, 2))  # all points of this rep of this id
                     # color based on if active
                     # active -> lime green,

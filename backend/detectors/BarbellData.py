@@ -1,3 +1,4 @@
+from collections import defaultdict
 from json import loads
 from typing import Any, Dict, List
 
@@ -48,11 +49,37 @@ class BarbellData:
         self.phase = BarbellPhase.RACKED
         self.lift = None  # not known yet, will be updated before barbell tracking starts
 
+        # for each tracker_id, store the x,y coordinates of each rep
+        # reps_history = {tracker_id : [rep_num (int): [(x: (float), y: (float)), (x,y), (x,y), ...]]}
+        self.reps_history = defaultdict(lambda: defaultdict(list))
+        self.rep_num = 0
+
     def get_v_x(self) -> float:
+        """Get the average of the barbell's X velocity over a constant number of frames
+
+        Returns:
+            float: The average X velocity over AVG_VELOCITY_OVER_FRAMES frames
+        """
         return self.get_mean(self.velocities_x, self.AVG_VELOCITY_OVER_FRAMES)
 
     def get_v_y(self) -> float:
+        """Get the average of the barbell's Y velocity over a constant number of frames
+
+        Returns:
+            float: The average Y velocity over AVG_VELOCITY_OVER_FRAMES frames
+        """
         return self.get_mean(self.velocities_y, self.AVG_VELOCITY_OVER_FRAMES)
+
+    def increment_rep_num(self) -> None:
+        self.rep_num += 1
+
+    def get_rep_num(self) -> int:
+        """Get the most recent rep that was started
+
+        Returns:
+            int: The rep
+        """
+        return self.rep_num
 
     def set_lift_type(self, lift: str) -> None:
         """Set the lift type from the lift classifier
@@ -64,8 +91,14 @@ class BarbellData:
         self.lift = lift
 
     def get_lift_type(self) -> str:
-        if self.lift == None:
-            return ""
+        """Return the lift type
+
+        "Squat", "Bench", or "Deadlift". 
+
+        Returns:
+            str: _description_
+        """
+        assert self.lift != None, "BarbellData initialized before lift has been classified."
         return self.lift
 
     def get_mean(self, data: list, length: int = None) -> float:

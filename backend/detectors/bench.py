@@ -32,6 +32,7 @@ class BenchPhaseDetection(PhaseDetectionStrategy):
                 # if moving down in the y direction, and y_norm has changed since the beginning of TOP phase
                 if (v_y > 0.04) and (abs(BBD.y_norms[-1] - BBD.phase_data[BarbellPhase.TOP.name]["y"][1]) > 0.01):
                     phase = BarbellPhase.ECCENTRIC
+                    BBD.increment_rep_num()  # from 0 to 1
                 # moving in x direction, and rep has been done
                 # TODO check that x is moving closer to rack
                 elif (abs(v_x) > 0.05) and BBD.REP_COMPLETED:

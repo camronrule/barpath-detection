@@ -52,7 +52,8 @@ const VideoUpload = () => {
 
   useEffect(() => {
     if (isProcessing && (videoId != null && videoId != undefined)) {
-      const interval = setInterval(async () => {
+      let timeout;
+      timeout = setTimeout(async () => {
         try {
           const response = await fetch(
             `http://localhost/yolo/video/${videoId}/status`
@@ -64,7 +65,11 @@ const VideoUpload = () => {
 
           const data = await response.json();
 
+          
+
           setVideoProgress(data.progress);
+
+          console.log(data)
 
           if (data.state === "Finished") {
             setDownloadLink(
@@ -81,10 +86,11 @@ const VideoUpload = () => {
           }
         } catch (error) {
           console.error("Error checking status:", error);
+          setError(error)
         }
-      }, 500); // Poll every second
+      }, 1000); // Poll every second
 
-      return () => clearInterval(interval); // Cleanup on component unmount
+      return () => clearTimeout(timeout); // Cleanup on component unmount
     }
   }, [isProcessing, videoId]);
 

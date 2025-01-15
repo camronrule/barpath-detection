@@ -38,6 +38,7 @@ class DeadliftPhaseDetection(PhaseDetectionStrategy):
             case BarbellPhase.BOTTOM:
                 if (abs(v_y) > 0.025):
                     phase = BarbellPhase.CONCENTRIC
+                    BBD.increment_rep_num()  # rep_num starts at 0
 
             case BarbellPhase.CONCENTRIC:
                 if (abs(v_y) < 0.03):  # TODO check for y diff from bottom
