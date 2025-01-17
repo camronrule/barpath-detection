@@ -274,7 +274,7 @@ class YoloV11BarbellDetection:
             print(e)
             self.update_state(self.video_id, f"{STATE_ERROR}: {e}")
             self.update_progress(self.video_id, -1)
-            sys.exit()
+            return
 
     def _detect_barbell_in_thread(self):  # -> Tuple[str, str]:
         """Processes a video frame by frame, annotating the frames with the data from the custom barbell tracker
@@ -282,6 +282,8 @@ class YoloV11BarbellDetection:
         Returns:
             Tuple[str, str]: The output video path and the output JSON str
         """
+
+        assert self.get_progress(self.video_id) >= 0, f"Error classifying video \nEnding processing of video {self.video_id}"
 
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
 
@@ -328,20 +330,3 @@ class YoloV11BarbellDetection:
         logger.info(f"Average processing time (ms): {processing_time}")
 
         return
-
-
-'''def main() -> str:
-    input_video_path = "../../data/videos/IMG_6527.MOV"
-    output_video_path = "../../data/videos/IMG_6527_OUT.MOV"
-
-    # Initialize the object detector
-    detector = YoloV11BarbellDetection(input_video_path, output_video_path)
-
-    # Process a video and save the annotated output
-    data = detector.process_video()
-    return data
-
-
-if __name__ == "__main__":
-    main()
-'''
