@@ -29,9 +29,8 @@ const VideoUpload = () => {
     setIsUploading(true)
 
     try {
-      const response = await axios.post("http://localhost/yolo/", formData);
+      const response = await axios.post("http://localhost:8080/yolo/", formData);
 
-      console.log(response);
       if (response.status != 201)
         throw new Error("Failed to upload");
 
@@ -50,49 +49,56 @@ const VideoUpload = () => {
     }
   };
 
-  useEffect(() => {
-    if (isProcessing && (videoId != null && videoId != undefined)) {
-      let timeout;
-      timeout = setTimeout(async () => {
-        try {
-          const response = await fetch(
-            `http://localhost/yolo/video/${videoId}/status`
-          );
+  /* 
+   * While a video is being processed:
+   * Repeatedly poll the status endpoint to get processing status.
+   * Update progress bar as needed. If processing has finished, post 
+   * annotated video and results. If error reached during processing,
+   * elevate the error to the UI.
+   */
+  async function fetchAPIData(){
+    if (isProcessing && (videoId != null && videoId != undefined)){
+      const response = await fetch(`http://localhost:8080/yolo/video/${videoId}/status`);
 
-          if (!response.ok) {
-            throw new Error("Failed to check status");
-          }
+      try {
 
+        if (response.ok){
           const data = await response.json();
-
-          
-
           setVideoProgress(data.progress);
-
-          console.log(data)
-
-          if (data.state === "Finished") {
+  
+          if (data.state === "Finished"){
             setDownloadLink(
-              `http://localhost/yolo/video/${videoId}`
+              `http://localhost:8080/yolo/video/${videoId}`
             );
             setResultsLink(
-              `http://localhost/yolo/video/${videoId}/data`
+              `http://localhost:8080/yolo/video/${videoId}/data`
             );
-            setIsProcessing(false); // Stop polling
-            //TODO Get results
+            // Stop polling
+            setIsProcessing(false); 
+            return;
           }
+  
           else if (data.state.includes("Error")){
-            throw new Error(data.state)
+            throw new Error(`Error processing video: ${data.state}`);
           }
-        } catch (error) {
-          console.error("Error checking status:", error);
-          setError(error)
         }
-      }, 1000); // Poll every second
+  
+        else{ // fetch failed
+          throw new Error("Failed to poll status.");
+        }
+        // poll for new status in 1 second
+        setTimeout(fetchAPIData, 1000);
+      }
 
-      return () => clearTimeout(timeout); // Cleanup on component unmount
+      // error when parsing status
+      catch (e) {
+        setError(e);
+        console.error(e);
+        return;
+      } 
     }
-  }, [isProcessing, videoId]);
+  }
+  fetchAPIData();
 
   return (
     <div>
