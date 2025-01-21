@@ -32,6 +32,8 @@ class BarbellData:
         self.velocities_x = []
         # velocity in y direction (in meters per second)
         self.velocities_y = []
+        # total velocity (in meters per second)
+        self.total_velocities = []
         self.accelerations = []  # acceleration (in meters per second squared)
 
         # x,y norm values for each frame that we are in each position

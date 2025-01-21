@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<head>
+    <meta charset="utf-8">
+</head>
+
+<body>
+    <!-- https://d3-graph-gallery.com/graph/line_several_group.html -->
+
+    <div id="container"></div>
+    <script type="module">
+        import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+    
+        // chart dimensions
+        const width = 640;
+        const height = 400;
+        const margin = { top: 20, right: 20, bottom: 20, left: 20 };
+    
+        const svg = d3.select("#container")
+            .append("svg")
+                .attr("width", width+margin.left+margin.right)
+                .attr("height", height+margin.top+margin.bottom)
+            .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`)
+        
+        d3.json("data.json").then(data => {
+
+            console.log(data);
+
+            const sumstat = d3.group(data, d=> d.name);
+
+            const x = d3.scaleLinear()
+                .domain(d3.extent(data, function(d) { return d.Frame;}))
+                .range([0,width]);
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x));
+
+            const y = d3.scaleLinear()
+                .domain([d3.min(data, d => { return d.Velocity_Y; }), d3.max(data, d => { return d.Velocity_Y; })])
+                .range([height, 0])
+
+            svg.append("g")
+                .call(d3.axisLeft(y));
+
+            const color = d3.scaleOrdinal()
+                .domain(sumstat.keys())
+                .range(d3.schemeSet2);
+
+            svg.selectAll(".line")
+                .data(sumstat)
+                .join("path")
+                    .attr("fill", "none")
+                    .attr("stroke", d => { return color(d[0]); })
+                    .attr("stroke-width", 1.5)
+                    .attr("d", d => {
+                        return d3.line()
+                            .x(d => x(d.Frame))
+                            .y(d => y(+d.Velocity_Y))
+                            (d[1])
+                    });
+        });
+
+    
+    
+    </script>
+</body>

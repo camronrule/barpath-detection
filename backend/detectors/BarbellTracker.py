@@ -127,6 +127,8 @@ class BarbellTracker:
                 v_x = delta_x_meters / delta_t
                 v_y = delta_y_meters / delta_t
 
+                v_total = (v_x ** 2 + v_y ** 2) ** 0.5
+
                 # calculate acceleration from velocity
                 # acceleration = change in velocity / change in time
                 # unit: meters per second squared
@@ -148,6 +150,7 @@ class BarbellTracker:
                 self.data.delta_y_outs.append(delta_y_meters)
                 self.data.velocities_x.append(v_x)
                 self.data.velocities_y.append(v_y)
+                self.data.total_velocities.append(v_total)
                 self.data.speeds.append(speed_mps)
 
                 # decide if we need to update the displayed speed value
@@ -160,8 +163,10 @@ class BarbellTracker:
                 # end elif len(coordinates[id]) == 2
             # end if detections > 0
 
-        formatted_v_x = f"{self.data.get_mean(self.data.velocities_x, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
-        formatted_v_y = f"{self.data.get_mean(self.data.velocities_y, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
+        formatted_v_x = f"{self.data.get_mean(
+            self.data.velocities_x, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
+        formatted_v_y = f"{self.data.get_mean(
+            self.data.velocities_y, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
 
         values = {
             "Phase": self.data.phase.name,
