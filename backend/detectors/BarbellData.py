@@ -1,6 +1,6 @@
 from collections import defaultdict
-from json import loads
-from typing import Any, Dict, List
+from json import loads, dumps
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from .BarbellPhase import BarbellPhase
@@ -121,6 +121,19 @@ class BarbellData:
             length = len(data)
         return fmean(data[-length:])
 
+    def get_reps_history(self) -> Dict[int, Dict[int, List[Tuple[float, float]]]]:
+        formatted_data = []
+
+        for tracker_id, reps in self.reps_history.items():
+            tracker_data = {"tracker_id": tracker_id, "reps": []}
+            for rep_num, coordinates in reps.items():
+                tracker_data["reps"].append(
+                    {"rep": rep_num, "coordinates": coordinates})
+
+            formatted_data.append(tracker_data)
+
+        return formatted_data
+
     def get_json_from_data(self) -> List[Dict[str, Any]]:
         df = pd.DataFrame({
             "Frame": self.frame_indices,
@@ -133,6 +146,7 @@ class BarbellData:
             "Speed": self.speeds,
             "Velocity_X": self.velocities_x,
             "Velocity_Y": self.velocities_y,
+            "Total_Velocity": self.total_velocities,
             "Acceleration": self.accelerations
         })
         return loads(df.to_json(orient='records'))

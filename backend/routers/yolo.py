@@ -116,6 +116,14 @@ async def yolo_video_data(video_id: int) -> JSONResponse:
         raise HTTPException(status_code=404, detail="Video not found")
 
 
+@router.get("/video/{video_id}/repsdata")
+async def yolo_reps_data(video_id: int) -> JSONResponse:
+    try:
+        return JSONResponse(content=detector.reps[video_id])
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+
 @router.get("/video/{video_id}/status")
 async def yolo_video_status(video_id: int) -> dict:
     """Check the processing status of a video

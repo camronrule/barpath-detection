@@ -48,6 +48,7 @@ class YoloV11BarbellDetection:
         self.barbell_detector = self.__load_detector()
         self.lift_classifier = self.__load_classifier()
         self.data = {}
+        self.reps = {}
         # video_id : {"state": str, "progress": float}
         self.status = defaultdict(
             lambda: {"state": STATE_PROCESSING, "progress": "0.0"})
@@ -72,6 +73,7 @@ class YoloV11BarbellDetection:
 
         # show that we are not done processing this video yet
         self.data[video_id] = "N/A"
+        self.reps[video_id] = "N/A"
 
         self.update_progress(video_id, 0)
         self.update_state(video_id, STATE_PROCESSING)
@@ -121,7 +123,8 @@ class YoloV11BarbellDetection:
         self.__box_annotator = sv.BoxCornerAnnotator(
             thickness=self.__thickness)  # bounding box = corners
         self.__label_annotator = sv.LabelAnnotator(
-            text_scale=self.__text_scale, text_thickness=self.__thickness)  # writes the speed label to the barbell
+            # writes the speed label to the barbell
+            text_scale=self.__text_scale, text_thickness=self.__thickness)
         # length = maxsize, draw for the whole video
         self.__trace_annotator = sv.TraceAnnotator(trace_length=1)
 
@@ -268,7 +271,8 @@ class YoloV11BarbellDetection:
                         return
             else:
                 raise Exception(
-                    "Not able to classify lift. Manual lift classification is WIP.")  # TODO manual lift classification
+                    # TODO manual lift classification
+                    "Not able to classify lift. Manual lift classification is WIP.")
 
         except Exception as e:
             print(e)
@@ -283,7 +287,8 @@ class YoloV11BarbellDetection:
             Tuple[str, str]: The output video path and the output JSON str
         """
 
-        assert self.get_progress(self.video_id) >= 0, f"Error classifying video \nEnding processing of video {self.video_id}"
+        assert self.get_progress(
+            self.video_id) >= 0, f"Error classifying video \nEnding processing of video {self.video_id}"
 
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
 
@@ -321,6 +326,7 @@ class YoloV11BarbellDetection:
         # should be 1 anyway, but just to be sure
         self.update_progress(self.video_id, 1.0)
         self.data[self.video_id] = barbell_tracker.get_json_from_data()
+        self.reps[self.video_id] = barbell_tracker.get_reps_history()
 
         # print average processing time
         processing_time = ""

@@ -371,3 +371,6 @@ class BarbellTracker:
 
     def get_json_from_data(self) -> List[Dict[str, Any]]:
         return self.data.get_json_from_data()
+
+    def get_reps_history(self):
+        return self.data.get_reps_history()

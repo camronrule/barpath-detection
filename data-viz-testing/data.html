@@ -1,12 +1,37 @@
 <!DOCTYPE html>
 <head>
     <meta charset="utf-8">
+    <style>
+    .line {
+      fill: none;
+      stroke-width: 2;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ddd;
+      padding: 5px;
+      font-size: 12px;
+      pointer-events: none;
+    }
+    .axis-label {
+      font-size: 12px;
+    }
+    </style>
 </head>
 
 <body>
     <!-- https://d3-graph-gallery.com/graph/line_several_group.html -->
 
-    <div id="container"></div>
+    <div>
+        <label><input type="radio" name="data-select" value="Velocity_X" checked> Velocity X</label>
+        <label><input type="radio" name="data-select" value="Velocity_Y" checked> Velocity Y</label>
+        <label><input type="radio" name="data-select" value="X_normalized" checked> X Normalized</label>
+        <label><input type="radio" name="data-select" value="Y_normalized"> Y Normalized</label>
+        <label><input type="radio" name="data-select" value="Delta_X"> Delta X</label>
+      </div>
+    <div id="chart"></div>
+    <div class="tooltip" style="opacity: 0;"></div>
     <script type="module">
         import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
     
@@ -15,53 +40,88 @@
         const height = 400;
         const margin = { top: 20, right: 20, bottom: 20, left: 20 };
     
-        const svg = d3.select("#container")
+        const svg = d3.select("#chart")
             .append("svg")
                 .attr("width", width+margin.left+margin.right)
                 .attr("height", height+margin.top+margin.bottom)
             .append("g")
                 .attr("transform", `translate(${margin.left},${margin.top})`)
+
+        const tooltip = d3.select(".tooltip");
         
         d3.json("data.json").then(data => {
 
             console.log(data);
 
-            const sumstat = d3.group(data, d=> d.name);
-
             const x = d3.scaleLinear()
-                .domain(d3.extent(data, function(d) { return d.Frame;}))
+                .domain(d3.extent(data, d => d.Frame))
                 .range([0,width]);
 
-            svg.append("g")
-                .attr("transform", `translate(0,${height})`)
-                .call(d3.axisBottom(x));
-
             const y = d3.scaleLinear()
-                .domain([d3.min(data, d => { return d.Velocity_Y; }), d3.max(data, d => { return d.Velocity_Y; })])
                 .range([height, 0])
 
-            svg.append("g")
-                .call(d3.axisLeft(y));
+            const xaxis = svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x));
+            
+            const yaxis = svg.append("g")
 
-            const color = d3.scaleOrdinal()
-                .domain(sumstat.keys())
-                .range(d3.schemeSet2);
+            let currentMetric = "Velocity_Y";
 
-            svg.selectAll(".line")
-                .data(sumstat)
-                .join("path")
+            const line = d3.line()
+                .x(d => x(d.Frame))
+                .y(d => y(d.value));
+            
+            const updateChart = () => {
+
+                const selectedData = data
+                    .map(d => ({ Frame: d.Frame, value: d[currentMetric] }))
+                    .filter(d => d.value !== null && !isNaN(d.value));
+
+                y.domain(d3.extent(selectedData, d => d.value));
+                yaxis.call(d3.axisLeft(y));
+
+                svg.selectAll(".line").remove();
+
+                const path = svg.append("path")
+                    .datum(selectedData)
+                    .attr("class", "line")
+                    .attr("d", line)
+                    .attr("stroke", "steelblue")
+                    .attr("stroke-width", 2)
+                    .attr("fill", "none");
+
+                svg.selectAll(".tooltip-line").remove();
+                svg.append("path")
+                    .datum(selectedData)
+                    .attr("class", "tooltip-line")
+                    .attr("d", line)
+                    .attr("stroke", "transparent")
+                    .attr("stroke-width", 15) // Make it easier to hover
                     .attr("fill", "none")
-                    .attr("stroke", d => { return color(d[0]); })
-                    .attr("stroke-width", 1.5)
-                    .attr("d", d => {
-                        return d3.line()
-                            .x(d => x(d.Frame))
-                            .y(d => y(+d.Velocity_Y))
-                            (d[1])
-                    });
+                    .on("mousemove", (event) => {
+                        const [mouseX] = d3.pointer(event);
+                        const hoveredFrame = Math.round(x.invert(mouseX));
+
+                        const closestData = selectedData.find(d => d.Frame === hoveredFrame);
+                        if (closestData) {
+                            tooltip
+                            .style("opacity", 1)
+                            .style("left", `${event.pageX + 10}px`)
+                            .style("top", `${event.pageY - 20}px`)
+                            .html(`Frame: ${closestData.Frame}<br>Value: ${closestData.value.toFixed(5)}`);
+                        }
+                    })
+                    .on("mouseout", () => tooltip.style("opacity", 0));
+            }
+            updateChart();
+
+            d3.selectAll("input[name='data-select']").on("change", event => {
+                currentMetric = event.target.value;
+                updateChart();
+            });
         });
 
-    
     
     </script>
 </body>
