@@ -121,7 +121,8 @@ class YoloV11BarbellDetection:
         self.__box_annotator = sv.BoxCornerAnnotator(
             thickness=self.__thickness)  # bounding box = corners
         self.__label_annotator = sv.LabelAnnotator(
-            text_scale=self.__text_scale, text_thickness=self.__thickness)  # writes the speed label to the barbell
+            # writes the speed label to the barbell
+            text_scale=self.__text_scale, text_thickness=self.__thickness)
         # length = maxsize, draw for the whole video
         self.__trace_annotator = sv.TraceAnnotator(trace_length=1)
 
@@ -268,7 +269,8 @@ class YoloV11BarbellDetection:
                         return
             else:
                 raise Exception(
-                    "Not able to classify lift. Manual lift classification is WIP.")  # TODO manual lift classification
+                    # TODO manual lift classification
+                    "Not able to classify lift. Manual lift classification is WIP.")
 
         except Exception as e:
             print(e)
@@ -283,12 +285,13 @@ class YoloV11BarbellDetection:
             Tuple[str, str]: The output video path and the output JSON str
         """
 
-        assert self.get_progress(self.video_id) >= 0, f"Error classifying video \nEnding processing of video {self.video_id}"
+        assert self.get_progress(
+            self.video_id) >= 0, f"Error classifying video \nEnding processing of video {self.video_id}"
 
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
 
         try:
-            with sv.VideoSink(self.video_path_out, self.__video_info) as sink:
+            with sv.VideoSink(self.video_path_out, self.__video_info, codec='H264') as sink:
 
                 # get detections by calling the model on each frame
                 # get velocity data by passing detections to the barbell tracker
