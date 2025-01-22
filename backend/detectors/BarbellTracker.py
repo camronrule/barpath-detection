@@ -88,7 +88,6 @@ class BarbellTracker:
 
             plate_center = detections.get_anchors_coordinates(sv.Position.CENTER)[
                 0]  # [x, y]
-            self.__add_rep_to_data(id, plate_center)
             # update x,y coordinates for displacement calculation
             self.__update_coordinates(id, plate_center)
 
@@ -100,6 +99,8 @@ class BarbellTracker:
             # if there was a previous frame, then we
             # we can compute speed, velocity, acceleration
             elif len(self.__coordinates[id]) == 2:
+
+                self.__add_rep_to_data(id, plate_center)
 
                 pixel_displacement, delta_x, delta_y = self.__calculate_displacement(
                     id)
@@ -262,7 +263,11 @@ class BarbellTracker:
         rep = reps[current_rep]
 
         if self.__should_draw_line():
+            self.data.reps_by_frame.append(current_rep)
             rep.append((float(center_coords[0]), float(center_coords[1])))
+
+        else:
+            self.data.reps_by_frame.append(None)  # keep index = frame
 
     def __should_draw_line(self) -> bool:
         """Return if the current rep is in a phase that should be drawn

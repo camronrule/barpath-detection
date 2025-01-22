@@ -26,9 +26,14 @@
     <div>
         <label><input type="radio" name="data-select" value="Velocity_X" checked> Velocity X</label>
         <label><input type="radio" name="data-select" value="Velocity_Y" checked> Velocity Y</label>
-        <label><input type="radio" name="data-select" value="X_normalized" checked> X Normalized</label>
-        <label><input type="radio" name="data-select" value="Y_normalized"> Y Normalized</label>
-        <label><input type="radio" name="data-select" value="Delta_X"> Delta X</label>
+        <label><input type="radio" name="data-select" value="Total_Velocity" checked>Velocity</label>
+        <label><input type="radio" name="data-select" value="Acceleration" checked>Acceleration</label>
+        <label><input type="radio" name="data-select" value="X_position" checked>X Position</label>
+        <label><input type="radio" name="data-select" value="Y_position" checked>Y Position</label>
+
+        <label><input type="checkbox" id="showReps">Show Reps</label>
+        
+        
       </div>
     <div id="chart"></div>
     <div class="tooltip" style="opacity: 0;"></div>
@@ -53,12 +58,14 @@
 
             console.log(data);
 
+            // padding from: https://observablehq.com/@d3/line-with-tooltip/2
             const x = d3.scaleLinear()
                 .domain(d3.extent(data, d => d.Frame))
-                .range([0,width]);
+                .range([margin.left, width - margin.right]);
 
             const y = d3.scaleLinear()
-                .range([height, 0])
+                .domain([0, d3.max(data, d => d.velocity)])
+                .range([height - margin.bottom, margin.top])
 
             const xaxis = svg.append("g")
                 .attr("transform", `translate(0,${height})`)
@@ -71,11 +78,19 @@
             const line = d3.line()
                 .x(d => x(d.Frame))
                 .y(d => y(d.value));
+
+            // Area generator for reps
+            const area = d3.area()
+                .x(d => x(d.Frame))
+                .y0(-10) // small padding above line graph
+                .y1(height);
+
+            const areaGroup = svg.append("g").attr("class", "rep-areas");
             
             const updateChart = () => {
 
                 const selectedData = data
-                    .map(d => ({ Frame: d.Frame, value: d[currentMetric] }))
+                    .map(d => ({ Frame: d.Frame, value: d[currentMetric], Rep_Number:  (d.Rep_Number ? d.Rep_Number : null) }))
                     .filter(d => d.value !== null && !isNaN(d.value));
 
                 y.domain(d3.extent(selectedData, d => d.value));
@@ -106,21 +121,67 @@
                         const closestData = selectedData.find(d => d.Frame === hoveredFrame);
                         if (closestData) {
                             tooltip
-                            .style("opacity", 1)
-                            .style("left", `${event.pageX + 10}px`)
-                            .style("top", `${event.pageY - 20}px`)
-                            .html(`Frame: ${closestData.Frame}<br>Value: ${closestData.value.toFixed(5)}`);
+                                .style("opacity", 1)
+                                .style("left", `${event.pageX + 10}px`)
+                                .style("top", `${event.pageY - 20}px`)
+                                .html(`Frame: ${closestData.Frame}<br>
+                                ${currentMetric}: ${closestData.value.toFixed(5)}<br>
+                                ${closestData.Rep_Number ? `Rep: ${closestData.Rep_Number}` : "No rep"}`);
                         }
                     })
                     .on("mouseout", () => tooltip.style("opacity", 0));
             }
+
             updateChart();
+            updateAreaChart(false);
 
             d3.selectAll("input[name='data-select']").on("change", event => {
                 currentMetric = event.target.value;
                 updateChart();
             });
+
+            d3.select("input#showReps").on("change", e => {
+                const showReps = document.querySelector("input#showReps").checked
+                updateAreaChart(showReps);
+            });
+
+            function updateAreaChart(showReps) {
+                if (showReps){
+                    const repSegments = [];
+                    let currentSegment = [];
+
+                    data.forEach((d) => {
+                        if (d.Rep_Number != null && d.Rep_Number > 0) {
+                            currentSegment.push(d);
+                        } 
+                        else if (currentSegment.length > 0) {
+                            repSegments.push([...currentSegment]);
+                            currentSegment = [];
+                        }
+                    });
+
+                    if (currentSegment.length > 0) {
+                        repSegments.push([...currentSegment]);
+                    }
+
+                    // Draw area chart for each rep
+                    areaGroup.selectAll(".rep-area")
+                        .data(repSegments)
+                        .enter()
+                        .append("path")
+                        .attr("class", "rep-area")
+                        .attr("d", d => area(d))
+                        .attr("fill", "green")
+                        .attr("opacity", 0.3);
+                }
+                else {
+                    areaGroup.selectAll(".rep-area").remove();
+                }
+            }
+
+            
         });
+
 
     
     </script>

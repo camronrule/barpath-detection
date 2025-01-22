@@ -2,6 +2,7 @@ from collections import defaultdict
 from json import loads, dumps
 from typing import Any, Dict, List, Tuple
 
+from numpy import float64
 import pandas as pd
 from .BarbellPhase import BarbellPhase
 from statistics import fmean
@@ -20,13 +21,14 @@ class BarbellData:
         # to detect the barbell phase, or is sent to the barbell detection
         # class to be annotated on the video
         self.frame_indices = []  # index of frame
-        self.x_norms = []       # normalized x position of barbell center
+        # normalized x position of barbell center (i.e., percentage of total width of frame)
+        self.x_norms = []
         self.y_norms = []       # normalized y position of barbell center
         # change in x position (in meters) since last frame
         self.delta_x_outs = []
         # change in y position (in meters) since last frame
         self.delta_y_outs = []
-        # smoothed speed of barbell (in meters per second)
+        # speed of barbell (in meters per second)
         self.speeds = []
         # velocity in x direction (in meters per second)
         self.velocities_x = []
@@ -35,6 +37,8 @@ class BarbellData:
         # total velocity (in meters per second)
         self.total_velocities = []
         self.accelerations = []  # acceleration (in meters per second squared)
+        # index: frame, value: rep_num (if rep should be drawn)
+        self.reps_by_frame = []
 
         # x,y norm values for each frame that we are in each position
         # *edge case*: values are only updated in frames that a barbell is detected
@@ -47,7 +51,6 @@ class BarbellData:
             "CONCENTRIC": {"x": [], "y": []},
             "RACKING": {"x": [], "y": []}
         }
-
         self.phase = BarbellPhase.RACKED
         self.lift = None  # not known yet, will be updated before barbell tracking starts
 
@@ -141,12 +144,30 @@ class BarbellData:
             "Lift": [self.lift] * len(self.frame_indices),
             "X_normalized": self.x_norms,
             "Y_normalized": self.y_norms,
-            "Delta_X": self.delta_x_outs,
-            "Delta Y": self.delta_y_outs,
-            "Speed": self.speeds,
+            "Delta_X": self.delta_x_outs,  # same as vel x
+            "Delta_Y": self.delta_y_outs,
+            "Speed": self.speeds,    # same as total velocity
             "Velocity_X": self.velocities_x,
             "Velocity_Y": self.velocities_y,
             "Total_Velocity": self.total_velocities,
-            "Acceleration": self.accelerations
+            "Acceleration": self.accelerations,
+            "Rep_Number": self.reps_by_frame
         })
+        # these map the change of x,y over time, essentially the barbell position relative to the starting position
+        # ensure they are as float64, rather than int32
+        df["X_position"] = df["Delta_X"].cumsum()
+        df["Y_position"] = df["Delta_Y"].cumsum()
+        df = df.astype({
+            "X_position": float64,
+            "Y_position": float64
+        })
+
+        # smooth acceleration data
+        # EMA smoothing factor (0 < alpha <= 1). Larger values -> less smoothing
+        alpha = 0.15
+        df["Acceleration"] = df["Acceleration"].ewm(alpha=alpha).mean()
+        df["Velocity_Y"] = df["Velocity_Y"].ewm(alpha=alpha).mean()
+        df["Velocity_X"] = df["Velocity_X"].ewm(alpha=alpha).mean()
+        df["Total_Velocity"] = df["Total_Velocity"].ewm(alpha=alpha).mean()
+
         return loads(df.to_json(orient='records'))
