@@ -39,44 +39,69 @@
     <div class="tooltip" style="opacity: 0;"></div>
     <script type="module">
         import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+
+        /*
+         * Credit to the incredible examples from Mike Bostock
+         * https://observablehq.com/@d3/line-with-tooltip/2
+         */
     
         // chart dimensions
         const width = 640;
         const height = 400;
         const margin = { top: 20, right: 20, bottom: 20, left: 20 };
 
+        // Add chart container
         const svg = d3.select("#chart")
             .append("svg")
-                .attr("width", width+margin.left+margin.right)
-                .attr("height", height+margin.top+margin.bottom)
+                .attr("width", width)
+                .attr("height", height)
                 .attr("viewBox", [0, 0, width, height])
+                .attr("style", "max-width: 100%; height: auto; height: intrinsic; font: 10px sans-serif;")
                 .style("-webkit-tap-highlight-color", "transparent")
-                .style("overflow", "visible")
-            .append("g")
-                .attr("transform", `translate(${margin.left},${margin.top})`)
+                .style("overflow", "visible");
 
-        //const tooltip = d3.select(".tooltip");
-        
         d3.json("data.json").then(data => {
 
             console.log(data);
 
-            // padding from: https://observablehq.com/@d3/line-with-tooltip/2
+            let currentMetric = "Total_Velocity"; // default
+
+            
             const x = d3.scaleLinear()
                 .domain(d3.extent(data, d => d.Frame))
-                .range([0, width]);
+                .range([margin.left, width-margin.right]);
 
             const y = d3.scaleLinear()
-                .domain([0, d3.max(data, d => d.velocity)])
-                .range([height, margin.top]) //height-margin.bottom, margin.top
+                .domain([0, d3.max(data, d => d.velocity)]).nice()
+                .range([height - margin.bottom, margin.top]);
 
-            const xaxis = svg.append("g")
-                .attr("transform", `translate(0,${height})`)
-                .call(d3.axisBottom(x));
+            // xaxis
+            const xaxis = g => g 
+                .attr("transform", `translate(0,${height - margin.bottom})`)
+                .call(d3.axisBottom(x).ticks(width / 80).tickSizeOuter(0))
+                .call(g => g.append("text")
+                    .attr("x", margin.left * 3)
+                    .attr("y", 15)
+                    .attr("fill", "currentColor")
+                    .attr("text-anchor", "end")
+                    .text("Frame →"));
             
-            const yaxis = svg.append("g")
-
-            let currentMetric = "Total_Velocity"; // default
+            // yaxis
+            const yaxis = g => g 
+                .attr("transform", `translate(${margin.left},0)`)
+                .call(d3.axisLeft(y).ticks(height / 40))
+                .call(g => g.select(".domain").remove())
+                .call(g => g.selectAll(".tick line").clone()
+                    .attr("x2", width - margin.left - margin.right)
+                    .attr("stroke-opacity", 0.05))
+                .call(g => g.selectAll("#y-axis-label").remove())
+                .call(g => g.append("text")
+                    .attr("id", "y-axis-label")
+                    .attr("x", - margin.left)
+                    .attr("y", 10)
+                    .attr("fill", "currentColor")
+                    .attr("text-anchor", "start")
+                    .text(`↑ ${currentMetric}`));
 
             const line = d3.line()
                 .x(d => x(d.Frame))
@@ -85,10 +110,19 @@
             // Area generator for reps
             const area = d3.area()
                 .x(d => x(d.Frame))
-                .y0(-10) // small padding above line graph
-                .y1(height);
+                .y0(margin.top / 2) // omit margin.top -> small padding above line graph
+                .y1(height - margin.bottom);
 
-            const areaGroup = svg.append("g").attr("class", "rep-areas");
+            svg.append("g")
+                .attr("class", "x-axis")
+                .call(xaxis);
+            
+            svg.append("g")
+                .attr("class", "y-axis")
+                .call(yaxis);
+
+            const areaGroup = svg.append("g")
+                .attr("class", "rep-areas");
 
             
             const updateChart = () => {
@@ -97,18 +131,21 @@
                     .map(d => ({ Frame: d.Frame, value: d[currentMetric], Rep:  (d.Rep_Number ? d.Rep_Number : "N/A") }))
                     .filter(d => d.value !== null && !isNaN(d.value));
 
-                y.domain(d3.extent(selectedData, d => d.value));
-                yaxis.call(d3.axisLeft(y));
+                y.domain(d3.extent(selectedData, d => d.value)).nice();
 
                 svg.selectAll(".line").remove();
 
                 const path = svg.append("path")
                     .datum(selectedData)
                     .attr("class", "line")
-                    .attr("d", line)
+                    .attr("d", line(selectedData))
                     .attr("stroke", "steelblue")
-                    .attr("stroke-width", 2)
+                    .attr("stroke-width", 1.5)
                     .attr("fill", "none");
+
+                // Update the y-axis
+                svg.select(".y-axis")
+                    .call(yaxis);
 
                 /* tooltip stuff */
                 d3.select("svg")
@@ -122,6 +159,8 @@
                     const [mouseX] = d3.pointer(event);
                     const x0 = x.invert(mouseX);
                     const i = bisect(selectedData, x0);
+
+                    if (i >= selectedData.length) return;
 
                     const hoveredData = selectedData[i];
                     const mouseY = y(selectedData[i].value); // Use the y-coordinate from the data point
@@ -170,33 +209,6 @@
                     text.attr("transform", `translate(${-w / 2},${15 - y})`);
                     path.attr("d", `M${-w / 2 - 10},5H-5l5,-5l5,5H${w / 2 + 10}v${h + 20}h-${w + 20}z`);
                 }
-
-                /*
-                svg.selectAll(".tooltip-line").remove();
-                svg.append("path")
-                    .datum(selectedData)
-                    .attr("class", "tooltip-line")
-                    .attr("d", line)
-                    .attr("stroke", "transparent")
-                    .attr("stroke-width", 15) // Make it easier to hover
-                    .attr("fill", "none")
-                    .on("mousemove", (event) => {
-                        const [mouseX] = d3.pointer(event);
-                        const hoveredFrame = Math.round(x.invert(mouseX));
-
-                        const closestData = selectedData.find(d => d.Frame === hoveredFrame);
-                        if (closestData) {
-                            tooltip
-                                .style("opacity", 1)
-                                .style("left", `${event.pageX + 10}px`)
-                                .style("top", `${event.pageY - 20}px`)
-                                .html(`Frame: ${closestData.Frame}<br>
-                                ${currentMetric}: ${closestData.value.toFixed(3)}<br>
-                                ${closestData.Rep_Number ? `Rep: ${closestData.Rep_Number}` : "No rep"}`);
-                        }
-                    })
-                    .on("mouseout", () => tooltip.style("opacity", 0));
-                */
             }
 
             updateChart();
@@ -236,10 +248,10 @@
                         .data(repSegments)
                         .enter()
                         .append("path")
-                        .attr("class", "rep-area")
-                        .attr("d", d => area(d))
-                        .attr("fill", "green")
-                        .attr("opacity", 0.3);
+                            .attr("class", "rep-area")
+                            .attr("d", d => area(d))
+                            .attr("fill", "green")
+                            .attr("opacity", 0.3);
                 }
                 else {
                     areaGroup.selectAll(".rep-area").remove();
