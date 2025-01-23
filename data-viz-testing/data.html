@@ -24,12 +24,12 @@
     <!-- https://d3-graph-gallery.com/graph/line_several_group.html -->
 
     <div>
-        <label><input type="radio" name="data-select" value="Velocity_X" checked> Velocity X</label>
-        <label><input type="radio" name="data-select" value="Velocity_Y" checked> Velocity Y</label>
+        <label><input type="radio" name="data-select" value="Velocity_X" > Velocity X</label>
+        <label><input type="radio" name="data-select" value="Velocity_Y" > Velocity Y</label>
         <label><input type="radio" name="data-select" value="Total_Velocity" checked>Velocity</label>
-        <label><input type="radio" name="data-select" value="Acceleration" checked>Acceleration</label>
-        <label><input type="radio" name="data-select" value="X_position" checked>X Position</label>
-        <label><input type="radio" name="data-select" value="Y_position" checked>Y Position</label>
+        <label><input type="radio" name="data-select" value="Acceleration" >Acceleration</label>
+        <label><input type="radio" name="data-select" value="X_position" >X Position</label>
+        <label><input type="radio" name="data-select" value="Y_position" >Y Position</label>
 
         <label><input type="checkbox" id="showReps">Show Reps</label>
         
@@ -44,15 +44,18 @@
         const width = 640;
         const height = 400;
         const margin = { top: 20, right: 20, bottom: 20, left: 20 };
-    
+
         const svg = d3.select("#chart")
             .append("svg")
                 .attr("width", width+margin.left+margin.right)
                 .attr("height", height+margin.top+margin.bottom)
+                .attr("viewBox", [0, 0, width, height])
+                .style("-webkit-tap-highlight-color", "transparent")
+                .style("overflow", "visible")
             .append("g")
                 .attr("transform", `translate(${margin.left},${margin.top})`)
 
-        const tooltip = d3.select(".tooltip");
+        //const tooltip = d3.select(".tooltip");
         
         d3.json("data.json").then(data => {
 
@@ -61,11 +64,11 @@
             // padding from: https://observablehq.com/@d3/line-with-tooltip/2
             const x = d3.scaleLinear()
                 .domain(d3.extent(data, d => d.Frame))
-                .range([margin.left, width - margin.right]);
+                .range([0, width]);
 
             const y = d3.scaleLinear()
                 .domain([0, d3.max(data, d => d.velocity)])
-                .range([height - margin.bottom, margin.top])
+                .range([height, margin.top]) //height-margin.bottom, margin.top
 
             const xaxis = svg.append("g")
                 .attr("transform", `translate(0,${height})`)
@@ -73,7 +76,7 @@
             
             const yaxis = svg.append("g")
 
-            let currentMetric = "Velocity_Y";
+            let currentMetric = "Total_Velocity"; // default
 
             const line = d3.line()
                 .x(d => x(d.Frame))
@@ -86,11 +89,12 @@
                 .y1(height);
 
             const areaGroup = svg.append("g").attr("class", "rep-areas");
+
             
             const updateChart = () => {
 
                 const selectedData = data
-                    .map(d => ({ Frame: d.Frame, value: d[currentMetric], Rep_Number:  (d.Rep_Number ? d.Rep_Number : null) }))
+                    .map(d => ({ Frame: d.Frame, value: d[currentMetric], Rep:  (d.Rep_Number ? d.Rep_Number : "N/A") }))
                     .filter(d => d.value !== null && !isNaN(d.value));
 
                 y.domain(d3.extent(selectedData, d => d.value));
@@ -106,6 +110,68 @@
                     .attr("stroke-width", 2)
                     .attr("fill", "none");
 
+                /* tooltip stuff */
+                d3.select("svg")
+                    .on("pointerenter pointermove", pointerMoved)
+                    .on("pointerleave", pointerLeave)
+
+                const tooltip = svg.append("g")
+
+                const bisect = d3.bisector(d => d.Frame).left;
+                function pointerMoved(event) {
+                    const [mouseX] = d3.pointer(event);
+                    const x0 = x.invert(mouseX);
+                    const i = bisect(selectedData, x0);
+
+                    const hoveredData = selectedData[i];
+                    const mouseY = y(selectedData[i].value); // Use the y-coordinate from the data point
+
+                    console.log(hoveredData);
+
+                    tooltip.style("display", null)
+                    tooltip.attr("transform", `translate(${mouseX},${mouseY})`)
+
+                    const path = tooltip.selectAll("path")
+                        .data([hoveredData])
+                        .join("path")
+                            .attr("fill", "white")
+                            .attr("stroke", "black");
+                    
+                    const text = tooltip.selectAll("text")
+                        .data([hoveredData])
+                        .join("text")
+                        .call(text => text
+                            .selectAll("tspan")
+                            .data(d => Object.entries(d))
+                            .join("tspan")
+                                .attr("x", 0)
+                                .attr("y", (_, i) => `${i * 1.1}em`)
+                                .attr("font-weight", (_, i) => i ? null : "bold")
+                                .text(d => {
+                                    let key = d[0], value = d[1];
+                                    // change value to metric name if needed
+                                    if (key == "value"){
+                                        value = value.toFixed(2);
+                                        key = currentMetric;
+                                    }
+                                    return `${key}: ${value}`;
+                                })
+                        );
+                    
+                    size(text, path);
+                }
+
+                function pointerLeave() {
+                    tooltip.style("display", "none");
+                }
+
+                function size(text, path) {
+                    const {x, y, width: w, height: h} = text.node().getBBox();
+                    text.attr("transform", `translate(${-w / 2},${15 - y})`);
+                    path.attr("d", `M${-w / 2 - 10},5H-5l5,-5l5,5H${w / 2 + 10}v${h + 20}h-${w + 20}z`);
+                }
+
+                /*
                 svg.selectAll(".tooltip-line").remove();
                 svg.append("path")
                     .datum(selectedData)
@@ -125,11 +191,12 @@
                                 .style("left", `${event.pageX + 10}px`)
                                 .style("top", `${event.pageY - 20}px`)
                                 .html(`Frame: ${closestData.Frame}<br>
-                                ${currentMetric}: ${closestData.value.toFixed(5)}<br>
+                                ${currentMetric}: ${closestData.value.toFixed(3)}<br>
                                 ${closestData.Rep_Number ? `Rep: ${closestData.Rep_Number}` : "No rep"}`);
                         }
                     })
                     .on("mouseout", () => tooltip.style("opacity", 0));
+                */
             }
 
             updateChart();
