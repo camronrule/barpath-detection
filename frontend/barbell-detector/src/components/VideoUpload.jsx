@@ -3,6 +3,7 @@ import axios from "axios";
 
 const VideoUpload = () => {
   const [file, setFile] = useState(null);
+  const [lift_type, setLiftType] = useState(null);
   const [videoId, setVideoId] = useState(null);
   const [message, setMessage] = useState(null);
   const [downloadLink, setDownloadLink] = useState(null);
@@ -16,21 +17,38 @@ const VideoUpload = () => {
     setFile(e.target.files[0]);
   };
 
+  const handleRadioChange = (e) => {
+    setLiftType(e.target.value);
+    console.log(e.target.value);
+  };
+
   const handleUpload = async () => {
+
+    // prevent user from uploading another video while one is processing
     if (isProcessing || isUploading){
       alert(`Please wait for video ${videoId} to finish before uploading another.`);
       return;
     }
-    setIsProcessing(false)
-    setDownloadLink(null)
+
+    // lift_type must be selected before uploading
+    if (!lift_type){
+      alert("Please select a lift type before uploading your video.")
+      return;
+    }
+
     if (!file) {
       setError("Please select a file");
       return;
     }
-    const formData = new FormData();
-    formData.append("file", file);
 
-    setIsUploading(true)
+    setIsProcessing(false);
+    setDownloadLink(null);
+    setIsUploading(true);
+
+    // pass lift type and file to backend in a multipart form
+    const formData = new FormData();
+    formData.append("lift_type", lift_type);
+    formData.append("file", file);
 
     try {
       const response = await axios.post("http://localhost:8080/yolo/", formData);
@@ -38,18 +56,22 @@ const VideoUpload = () => {
       if (response.status != 201)
         throw new Error("Failed to upload");
 
+      // upload to API successful
       setMessage(response.data.message);
       setVideoId(response.data.video_id);
       setIsProcessing(true)
       setError(null);
 
+      // unsuccessful upload to API
     } catch (err) {
       setError(err);
       alert(err);
       console.error(err);
     }
+    // finished working with this video
     finally{
       setIsUploading(false);
+      setLiftType(null); // reset lift type for next upload
     }
   };
 
@@ -70,6 +92,13 @@ const VideoUpload = () => {
     return () => clearTimeout(timeout);
   }, [isProcessing, videoId, error, videoProgress, downloadLink, resultsLink, setIsProcessing, setError, setVideoProgress, setDownloadLink, setResultsLink]);
 
+  /*
+   * Repeatedly poll the status endpoint to get processing status.
+   * `data` received from the status endpoint has two fields:
+   * `state` and `progress`. `state` is either "Processing", "Finished", or includes "Error".
+   * `progress` is a float between 0 and 1, representing the percentage of the video 
+   * that has been processed.
+   */
   const poll = async () => {
     try {
       const response = await fetch(
@@ -81,11 +110,14 @@ const VideoUpload = () => {
       }
   
       const data = await response.json();
-  
       console.log(`Poll response: ${JSON.stringify(data)}`);
   
+      // update progress
       setVideoProgress(data.progress);
   
+      // and then update state
+
+      // if state is OK,
       if (data.state === "Finished") {
         setDownloadLink(
           `http://localhost:8080/yolo/video/${videoId}`
@@ -96,21 +128,24 @@ const VideoUpload = () => {
         setIsProcessing(false);
         keep_polling = false;
       } 
+      // and if state is NOT OK,
       else if (data.state.includes("Error")) {
         throw new Error(data.state);
       }
     } 
+    // just in case we reached an error when polling
     catch (e) {
       setError(e.message);
       setIsProcessing(false);
       console.error(e.message);
       keep_polling = false;
     }
+    // reset the poll to continue polling every 500ms
     if (keep_polling){
       clearTimeout(timeout);
       timeout = setTimeout(function() {poll();}, 500);
     }
-      
+    // if we are done polling, ensure the poll will not continue    
     else
       clearTimeout(timeout);
   };
@@ -122,6 +157,17 @@ const VideoUpload = () => {
       {(!isUploading && !isProcessing) && 
         <div>
           <h2>Upload Your Video</h2>
+          <legend>Select lift type:</legend>
+          <div>
+            <input type="radio" id="radio_bench" name="lift_type" value="Bench" onClick={handleRadioChange}></input>
+            <label htmlFor="radio_bench">Bench</label>
+
+            <input type="radio" id="radio_squat" name="lift_type" value="Squat" onClick={handleRadioChange}></input>
+            <label htmlFor="radio_squat">Squat</label>
+
+            <input type="radio" id="radio_deadlift" name="lift_type" value="Deadlift" onClick={handleRadioChange}></input>
+            <label htmlFor="radio_deadlift">Deadlift</label>
+          </div>
           <input type="file" accept="video/*" onChange={handleFileChange}/>
           <button onClick={handleUpload}>Upload</button>
         </div>

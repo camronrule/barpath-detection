@@ -3,9 +3,11 @@ import logging
 import os
 import tempfile
 from typing import Dict
-from fastapi import APIRouter, UploadFile, status, HTTPException
+from fastapi import APIRouter, File, Form, UploadFile, status, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from json import loads, dumps
+
+from typing import Annotated
 
 from detectors.YoloV11BarbellDetection import YoloV11BarbellDetection
 
@@ -42,21 +44,27 @@ detector = YoloV11BarbellDetection()
              responses={
                  201: {"description": "Successfully Analyzed Video."}
              })
-async def yolo_video_upload(file: UploadFile) -> dict:
+async def yolo_video_upload(
+        file: UploadFile = File(..., description="The video to analyze"),
+        lift_type: str = Form(
+            ..., description="Type of lift in the video (Squat, Bench, or Deadlift)")
+) -> dict:
     """Takes a multi-part upload video, analyzes each frame, and returns an annotated video.
 
     Arguments:
         file (UploadFile): The multi-part upload file
+        lift_type (str): The type of lift in the video. "Bench", "Squat", or "Deadlift"
 
     Returns:
         dict: The video ID and the download URL
 
     Example Curl:
         curl -X 'POST' \
-        'http://localhost/yolo/' \
+        'http://localhost:8080/yolo/' \
         -H 'accept: application/json' \
         -H 'Content-Type: multipart/form-data' \
-        -F 'file=@IMG_6860.MOV;type=video/quicktime'
+        -F 'file=@IMG_6723.MOV;type=video/quicktime' \
+        -F 'lift_type=Bench'
     """
 
     video_id = len(videos)
@@ -74,7 +82,8 @@ async def yolo_video_upload(file: UploadFile) -> dict:
 
         logger.info(f"Uploaded {temp_input.name}")
 
-        detector.init_video(temp_input.name, temp_output.name, video_id)
+        detector.init_video(
+            temp_input.name, temp_output.name, video_id, lift_type)
 
         # background_tasks.add_task(detector.process_video)
         asyncio.create_task(detector.process_video(video_id))
@@ -82,6 +91,7 @@ async def yolo_video_upload(file: UploadFile) -> dict:
         videos.append(temp_output.name)
 
         return {"message": "Video uploaded successfully. Processing has started",
+                "lift_type": lift_type,
                 "video_id": video_id}
 
     except Exception as e:

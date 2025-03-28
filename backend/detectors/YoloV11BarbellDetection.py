@@ -46,14 +46,14 @@ class YoloV11BarbellDetection:
         """Initialize a YOLO v11 image detection model
         """
         self.barbell_detector = self.__load_detector()
-        self.lift_classifier = self.__load_classifier()
+        # self.lift_classifier = self.__load_classifier()
         self.data = {}
         # video_id : {"state": str, "progress": float}
         self.status = defaultdict(
             lambda: {"state": STATE_PROCESSING, "progress": "0.0"})
         self.speeds = {'preprocess': [], 'inference': [], 'postprocess': []}
 
-    def init_video(self, video_path_in: str, video_path_out: str, video_id: int) -> None:
+    def init_video(self, video_path_in: str, video_path_out: str, video_id: int, lift_type: str) -> None:
         """Take in a video for the YOLO v11 model
 
         Args:
@@ -67,8 +67,11 @@ class YoloV11BarbellDetection:
         self.video_path_out = video_path_out
         self.video_id = video_id
 
+        self.lift_type = lift_type
+
         self.__setup_supervision()
         self.__barbell_tracker = self.__setup_barbell_tracker()
+        self.__barbell_tracker.set_lift_type(lift_type)
 
         # show that we are not done processing this video yet
         self.data[video_id] = "N/A"
@@ -232,7 +235,7 @@ class YoloV11BarbellDetection:
         """
         start = time.time()
         logger.info(f"Lift classification starting")
-        await asyncio.to_thread(self.__classify_lift_in_thread)
+        # await asyncio.to_thread(self.__classify_lift_in_thread)
         end = time.time()
         logger.info(
             f"Lift classification in video {video_id} finished. Took {float(timedelta(seconds=end-start).total_seconds()):.2f} seconds")
@@ -283,7 +286,8 @@ class YoloV11BarbellDetection:
             Tuple[str, str]: The output video path and the output JSON str
         """
 
-        assert self.get_progress(self.video_id) >= 0, f"Error classifying video \nEnding processing of video {self.video_id}"
+        assert self.get_progress(
+            self.video_id) >= 0, f"Error classifying video \nEnding processing of video {self.video_id}"
 
         barbell_tracker = self.__barbell_tracker   # custom barbell tracker
 
