@@ -124,6 +124,7 @@ class BarbellData:
             "Frame": self.frame_indices,
             # identify lift type
             "Lift": [self.lift] * len(self.frame_indices),
+            "Rep_num": self.rep_num,
             "X_normalized": self.x_norms,
             "Y_normalized": self.y_norms,
             "Delta_X": self.delta_x_outs,
