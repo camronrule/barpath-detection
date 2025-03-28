@@ -88,7 +88,6 @@ class BarbellTracker:
 
             plate_center = detections.get_anchors_coordinates(sv.Position.CENTER)[
                 0]  # [x, y]
-            self.__add_rep_to_data(id, plate_center)
             # update x,y coordinates for displacement calculation
             self.__update_coordinates(id, plate_center)
 
@@ -100,6 +99,8 @@ class BarbellTracker:
             # if there was a previous frame, then we
             # we can compute speed, velocity, acceleration
             elif len(self.__coordinates[id]) == 2:
+
+                self.__add_rep_to_data(id, plate_center)
 
                 pixel_displacement, delta_x, delta_y = self.__calculate_displacement(
                     id)
@@ -127,6 +128,8 @@ class BarbellTracker:
                 v_x = delta_x_meters / delta_t
                 v_y = delta_y_meters / delta_t
 
+                v_total = (v_x ** 2 + v_y ** 2) ** 0.5
+
                 # calculate acceleration from velocity
                 # acceleration = change in velocity / change in time
                 # unit: meters per second squared
@@ -148,6 +151,7 @@ class BarbellTracker:
                 self.data.delta_y_outs.append(delta_y_meters)
                 self.data.velocities_x.append(v_x)
                 self.data.velocities_y.append(v_y)
+                self.data.total_velocities.append(v_total)
                 self.data.speeds.append(speed_mps)
 
                 # decide if we need to update the displayed speed value
@@ -160,8 +164,10 @@ class BarbellTracker:
                 # end elif len(coordinates[id]) == 2
             # end if detections > 0
 
-        formatted_v_x = f"{self.data.get_mean(self.data.velocities_x, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
-        formatted_v_y = f"{self.data.get_mean(self.data.velocities_y, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
+        formatted_v_x = f"{self.data.get_mean(
+            self.data.velocities_x, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
+        formatted_v_y = f"{self.data.get_mean(
+            self.data.velocities_y, self.data.AVG_VELOCITY_OVER_FRAMES):+.2f}"
 
         values = {
             "Phase": self.data.phase.name,
@@ -257,7 +263,11 @@ class BarbellTracker:
         rep = reps[current_rep]
 
         if self.__should_draw_line():
+            self.data.reps_by_frame.append(current_rep)
             rep.append((float(center_coords[0]), float(center_coords[1])))
+
+        else:
+            self.data.reps_by_frame.append(None)  # keep index = frame
 
     def __should_draw_line(self) -> bool:
         """Return if the current rep is in a phase that should be drawn
@@ -366,3 +376,6 @@ class BarbellTracker:
 
     def get_json_from_data(self) -> List[Dict[str, Any]]:
         return self.data.get_json_from_data()
+
+    def get_reps_history(self):
+        return self.data.get_reps_history()
